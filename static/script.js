@@ -81,6 +81,7 @@
   function nag(message) {
     status.textContent = message;
     status.classList.add("is-cyan");
+    hop();
 
     if (prefersReduced.matches) {
       return;
@@ -156,6 +157,115 @@
       },
       { passive: true }
     );
+  }
+
+  /* ---------- bonzi blinks ---------- */
+
+  const portraitImg = portrait && portrait.querySelector(".portrait__img");
+  let blinkTimer = 0;
+
+  if (portraitImg) {
+    const openSrc = portraitImg.getAttribute("src");
+    const halfSrc = openSrc.replace(/Designer\.png(\?.*)?$/, "Designer_half.png$1");
+    const blinkSrc = openSrc.replace(/Designer\.png(\?.*)?$/, "Designer_blink.png$1");
+    const swapped = halfSrc !== openSrc && blinkSrc !== openSrc;
+
+    function scheduleBlink() {
+      // keep an irregular cadence so it does not read as a loop
+      blinkTimer = window.setTimeout(() => {
+        portraitImg.src = halfSrc;
+        window.setTimeout(() => {
+          portraitImg.src = blinkSrc;
+        }, 90);
+        window.setTimeout(() => {
+          portraitImg.src = openSrc;
+        }, 175);
+        scheduleBlink();
+      }, 1900 + Math.random() * 3800);
+    }
+
+    const startBlinking = () => {
+      if (!swapped || blinkTimer) {
+        return;
+      }
+      scheduleBlink();
+    };
+
+    const stopBlinking = () => {
+      window.clearTimeout(blinkTimer);
+      blinkTimer = 0;
+      portraitImg.src = openSrc;
+    };
+
+    if (!prefersReduced.matches) {
+      startBlinking();
+    }
+
+    // honour a mid-session change to the motion preference
+    if (typeof prefersReduced.addEventListener === "function") {
+      prefersReduced.addEventListener("change", (event) => {
+        if (event.matches) {
+          stopBlinking();
+        } else {
+          startBlinking();
+        }
+      });
+    }
+  }
+
+  /* ---------- he reacts when he speaks ---------- */
+
+  function hop() {
+    if (!portrait || prefersReduced.matches) {
+      return;
+    }
+    portrait.classList.remove("portrait--hop");
+    // reflow so the animation restarts on rapid clicks
+    void portrait.offsetWidth;
+    portrait.classList.add("portrait--hop");
+    window.setTimeout(() => {
+      portrait.classList.remove("portrait--hop");
+    }, 1300);
+  }
+
+  /* ---------- live build info ---------- */
+
+  const versionEl = document.getElementById("version");
+  const sizeMetas = document.querySelectorAll(".btn__meta[data-size-for]");
+
+  function formatSize(bytes) {
+    if (!bytes || bytes < 1) {
+      return null;
+    }
+    const mb = bytes / (1024 * 1024);
+    return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+  }
+
+  function applyManifest(manifest) {
+    if (versionEl && manifest && manifest.version) {
+      versionEl.textContent = `v${manifest.version}`;
+    }
+    if (sizeMetas.length && manifest && manifest.size) {
+      const text = formatSize(manifest.size);
+      if (text) {
+        sizeMetas.forEach((el) => {
+          el.textContent = `${el.dataset.sizeFor} · ${text}`;
+        });
+      }
+    }
+  }
+
+  function loadManifest() {
+    fetch("/version.json", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then(applyManifest)
+      .catch(() => {
+        /* the static markup is already correct, so this is safe to ignore */
+      });
+  }
+
+  if (versionEl || sizeMetas.length) {
+    loadManifest();
   }
 
   /* ---------- taskbar clock ---------- */

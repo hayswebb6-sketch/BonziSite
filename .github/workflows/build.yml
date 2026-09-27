@@ -1,0 +1,126 @@
+name: build
+
+# A push is the update signal: the desktop app polls /version.json, so a new
+# build on main is what triggers an in-app update.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r BonziCode/requirements.txt
+
+      - name: Build
+        working-directory: BonziCode
+        run: pyinstaller --clean --noconfirm bonzi_buddy_v2.spec
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "dist/bonzi_buddy_windows.zip"
+          Compress-Archive -Path dist/bonzi_buddy_v2.exe -DestinationPath $out
+          Get-FileHash -Algorithm SHA256 $out | Select-Object -ExpandProperty Hash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonzi-windows
+          path: dist/bonzi_buddy_windows.zip
+
+  macos:
+    name: macOS app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r BonziCode/requirements.txt
+
+      - name: Build
+        working-directory: BonziCode
+        run: |
+          pyinstaller --clean --noconfirm \
+            --name "Bonzi Buddy" \
+            --windowed \
+            --icon bonzi.ico \
+            --add-data "Designer.png:." \
+            --add-data "Designer_half.png:." \
+            --add-data "Designer_blink.png:." \
+            --add-data "bonzi.png:." \
+            bonzi_buddy_v2.py
+
+      - name: Ad-hoc sign and package
+        working-directory: BonziCode
+        # Unsigned .app bundles are quarantined on first launch, so we apply a
+        # local ad-hoc signature to at least make the bundle self-consistent.
+        run: |
+          codesign --force --deep --sign - "dist/Bonzi Buddy.app" || true
+          cd dist
+          zip -qry "../bonzi_buddy_mac.zip" "Bonzi Buddy.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonzi-macos
+          path: BonziCode/dist/bonzi_buddy_mac.zip
+
+  publish:
+    name: Publish artifacts + manifest
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage into downloads/
+        run: |
+          mkdir -p downloads
+          cp artifacts/bonzi-windows/bonzi_buddy_windows.zip downloads/bonzi_buddy_v2.zip
+          if [ -f artifacts/bonzi-macos/bonzi_buddy_mac.zip ]; then
+            cp artifacts/bonzi-macos/bonzi_buddy_mac.zip downloads/bonzi_buddy_mac.zip
+          fi
+          ls -l downloads
+
+      - name: Commit artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add downloads
+          if git diff --cached --quiet; then
+            echo "artifacts unchanged, nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore: publish Bonzi Buddy build from ${GITHUB_SHA::8}"
+          git push
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/bonzi-windows/bonzi_buddy_windows.zip
+            artifacts/bonzi-macos/bonzi_buddy_mac.zip
+          draft: false
+          generate_release_notes: true

@@ -1,0 +1,13 @@
+PyAutoGUI>=0.9.54,<1
+
+# Windows-only backends. Without these markers a macOS build fails at install
+# time, because neither pywin32 nor winotify publishes a darwin wheel.
+PyGetWindow>=0.0.9,<1; sys_platform == "win32"
+pywin32>=306; sys_platform == "win32"
+winotify>=1.1,<2; sys_platform == "win32"
+
+pillow>=10
+
+# Build-time only: produces dist/bonzi_buddy_v2.exe on Windows and
+# dist/Bonzi Buddy.app on macOS.
+pyinstaller>=6.22,<7

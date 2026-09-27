@@ -6,7 +6,10 @@
 <title>Bonzi Buddy</title>
 <meta name="description" content="The greatest digital friend ever created.">
 <meta name="theme-color" content="#1c1029">
-<link rel="icon" href="{{ url_for('static', filename='bonzi.png') }}" sizes="any">
+<link rel="icon" href="{{ url_for('static', filename='favicon-32.png') }}" sizes="32x32" type="image/png">
+<link rel="icon" href="{{ url_for('static', filename='favicon-16.png') }}" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+<link rel="manifest" href="{{ url_for('webmanifest') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -41,16 +44,24 @@
       </div>
 
       <div class="pitch">
-        <p class="pitch__eyebrow">v2</p>
+        <p class="pitch__eyebrow" id="version">v2</p>
         <p class="pitch__tagline">The greatest digital friend ever created.</p>
         <p class="pitch__rotator" id="rotator" aria-hidden="true"></p>
 
-        <a class="btn" href="{{ url_for('download') }}" download>
-          <span class="btn__label">Download</span>
-          <span class="btn__meta">.exe &middot; 22 MB</span>
-        </a>
+        <div class="downloads">
+          <a class="btn" href="{{ url_for('download') }}" download>
+            <span class="btn__label">Download for Windows</span>
+            <span class="btn__meta" data-size-for=".exe">.exe &middot; 22 MB</span>
+          </a>
 
-        <p class="pitch__note" id="status" role="status">He is already here.</p>      </div>
+          <a class="btn btn--ghost" href="{{ url_for('download_mac') }}" download>
+            <span class="btn__label">Download for Mac</span>
+            <span class="btn__meta" data-size-for=".app">.app &middot; universal</span>
+          </a>
+        </div>
+
+        <p class="pitch__note" id="status" role="status">He is already here.</p>
+      </div>
 
     </div>
 

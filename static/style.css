@@ -227,8 +227,26 @@ body {
 }
 
 @keyframes bob {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-0.7rem); }
+  0%, 100% { transform: translate(0, 0); }
+  25%      { transform: translate(0.18rem, -0.7rem); }
+  50%      { transform: translate(0, -0.35rem); }
+  75%      { transform: translate(-0.18rem, -0.7rem); }
+}
+
+/* a livelier reaction, added by script.js when he says something */
+@keyframes hop {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  20%      { transform: translate(0.3rem, -1.7rem) scale(1.04, 0.96); }
+  45%      { transform: translate(-0.25rem, 0) scale(0.97, 1.03); }
+  70%      { transform: translate(0.12rem, -0.5rem) scale(1.02, 0.98); }
+}
+
+.portrait--hop .portrait__img {
+  animation: hop 0.62s cubic-bezier(0.34, 1.56, 0.64, 1) 2;
+}
+
+.portrait--hop .portrait__shadow {
+  animation: breathe 0.31s ease-in-out 4;
 }
 
 .portrait__shadow {
@@ -245,6 +263,27 @@ body {
   0%, 100% { transform: scaleX(1);    opacity: 0.85; }
   50%      { transform: scaleX(0.86); opacity: 0.55; }
 }
+
+/* ---------- downloads ---------- */
+
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.downloads .btn {
+  flex: 1 1 12rem;
+}
+
+.btn--ghost {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-dim, #b9a8d6);
+}
+
+.btn--ghost:hover { background: rgb(255 255 255 / 0.05); }
 
 /* ---------- pitch ---------- */
 
@@ -475,4 +514,8 @@ body {
   .portrait__img,
   .portrait__shadow { animation: none; }
   .portrait__img { transform: none; }
+
+  /* higher specificity than the hop rule, so it needs naming explicitly */
+  .portrait--hop .portrait__img,
+  .portrait--hop .portrait__shadow { animation: none !important; }
 }
