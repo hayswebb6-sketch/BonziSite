@@ -437,12 +437,18 @@ body {
   border-color: rgb(144 120 168 / 0.35);
 }
 
-.taskbar__dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--ink-200);
-  box-shadow: 0 0 0.4rem var(--ink-200);
+/* the real Bonzi face rather than a generic dot */
+.taskbar__icon {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  border-radius: 2px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.taskbar__item--active .taskbar__icon {
+  filter: drop-shadow(0 0 0.28rem var(--ink-200));
 }
 
 .taskbar__spacer { flex: 1; }
