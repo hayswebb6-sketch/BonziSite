@@ -66,6 +66,20 @@ def find_asset(filename):
 
     return None
 
+def find_asset_dir(name):
+    """Same lookup as find_asset but for the frame folders."""
+    candidates=[
+        os.path.join(resource_dir(), name),
+        os.path.join(os.path.dirname(sys.executable), name),
+        os.path.abspath(name),
+    ]
+
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+
+    return None
+
 def log_error(message):
     try:
         os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -848,6 +862,8 @@ def show_mouse():
     set_cursor_visible(True)
 
 def x_pressed():
+    # he spins and refuses, every time
+    play_motion("spin")
 
     number=random.randint(2,5)
 
@@ -944,17 +960,102 @@ WINDOW_HEIGHT=BASE_HEIGHT + ANIM_PAD_Y * 2
 window.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
 bonzi.place(x=ANIM_PAD_X, y=ANIM_PAD_Y)
 
-_anim={"t":0, "state":"idle", "frames_left":0, "hop":0.0}
+_anim={"t":0, "state":"idle", "frames_left":0, "hop":0.0,
+       "playing":None, "frames":None, "index":0}
+
+# ---- pre-rendered motions -------------------------------------------------
+# Blender renders these into frames/<motion>/frame_NNN.png. They are loaded
+# lazily and cached, because building 122 PhotoImages up front would stall
+# startup and hold tens of megabytes for motions that may never play.
+
+MOTION_FPS=15
+MOTION_FRAME_MS=int(1000 / MOTION_FPS)
+MOTION_ORDER=("wave", "dance", "spin", "globe")
+_motion_cache={}
+_motion_failed=set()
+
+def load_motion(name):
+    if name in _motion_cache:
+        return _motion_cache[name]
+    if name in _motion_failed:
+        return None
+
+    folder=find_asset_dir(os.path.join("frames", name))
+
+    if folder is None:
+        _motion_failed.add(name)
+        return None
+
+    try:
+        names=sorted(
+            entry for entry in os.listdir(folder)
+            if entry.lower().endswith(".png")
+        )
+        frames=[]
+        for entry in names:
+            image=PhotoImage(file=os.path.join(folder, entry))
+            frames.append(image)
+    except Exception as error:
+        log_error(f"motion load failed for {name!r}: {error!r}")
+        _motion_failed.add(name)
+        return None
+
+    if not frames:
+        _motion_failed.add(name)
+        return None
+
+    _motion_cache[name]=frames
+    return frames
+
+def available_motions():
+    return [name for name in MOTION_ORDER if load_motion(name)]
+
+def play_motion(name=None):
+    """Queue a motion. Returns False if there is nothing to play."""
+    if name is None:
+        choices=available_motions()
+        if not choices:
+            return False
+        name=random.choice(choices)
+
+    frames=load_motion(name)
+
+    if not frames:
+        return False
+
+    _anim["playing"]=name
+    _anim["frames"]=frames
+    _anim["index"]=0
+    _anim["state"]="motion"
+    return True
 
 def bonzi_react():
-    # Called whenever he says something: a short, livelier hop.
-    _anim["hop"]=1.0
-    _anim["state"]="react"
-    _anim["frames_left"]=14
+    # Called whenever he says something. Prefer a real motion when the frames
+    # are available, and fall back to the procedural hop if they are not.
+    if not play_motion():
+        _anim["hop"]=1.0
+        _anim["state"]="react"
+        _anim["frames_left"]=14
 
 def _anim_tick():
     _anim["t"]+=1
     tick=_anim["t"]
+
+    # a queued motion owns the image until it finishes
+    if _anim["state"]=="motion":
+        frames=_anim["frames"]
+        index=_anim["index"]
+        bonzi.configure(image=frames[index])
+        _anim["index"]=index+1
+        if _anim["index"]>=len(frames):
+            _anim["state"]="idle"
+            _anim["frames"]=None
+            _anim["index"]=0
+            bonzi.configure(image=base_frame)
+        # motion frames are already full size, so hold him still in the window
+        bonzi.place(x=ANIM_PAD_X, y=ANIM_PAD_Y)
+        window.after(MOTION_FRAME_MS, _anim_tick)
+        return
 
     bob=math.sin(tick * 0.042) * ANIM_BOB
     sway=math.sin(tick * 0.026) * ANIM_SWAY
@@ -986,6 +1087,11 @@ def _anim_tick():
     x=max(0.0, ANIM_PAD_X + sway)
     y=max(0.0, ANIM_PAD_Y + bob)
     bonzi.place(x=x, y=y)
+
+    # every so often, break the idle loop with a full motion
+    if random.random()<0.0016 and _anim["state"]=="idle":
+        play_motion()
+
     window.after(ANIM_FRAME_MS, _anim_tick)
 
 window.iconphoto(False, PhotoImage(file=icon_path))

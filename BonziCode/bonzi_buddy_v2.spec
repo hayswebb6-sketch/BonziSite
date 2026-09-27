@@ -3,18 +3,32 @@ import os
 
 spec_dir = os.path.abspath(SPECPATH)
 
+# Blender-rendered motions live in frames/<motion>/frame_NNN.png. Collect them
+# by globbing rather than listing 122 paths by hand.
+datas = [
+    (os.path.join(spec_dir, 'Designer.png'), '.'),
+    (os.path.join(spec_dir, 'bonzi.png'), '.'),
+    (os.path.join(spec_dir, 'bonzi.ico'), '.'),
+    (os.path.join(spec_dir, 'Designer_half.png'), '.'),
+    (os.path.join(spec_dir, 'Designer_blink.png'), '.'),
+]
+
+frames_root = os.path.join(spec_dir, 'frames')
+if os.path.isdir(frames_root):
+    for current, _dirs, files in os.walk(frames_root):
+        rel = os.path.relpath(current, spec_dir)
+        for name in files:
+            if name.lower().endswith('.png'):
+                datas.append((os.path.join(current, name), rel))
+else:
+    print('WARNING: no frames/ directory found, the app will fall back to '
+          'the procedural idle animation only')
 
 a = Analysis(
     ['bonzi_buddy_v2.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        (os.path.join(spec_dir, 'Designer.png'), '.'),
-        (os.path.join(spec_dir, 'bonzi.png'), '.'),
-        (os.path.join(spec_dir, 'bonzi.ico'), '.'),
-        (os.path.join(spec_dir, 'Designer_half.png'), '.'),
-        (os.path.join(spec_dir, 'Designer_blink.png'), '.'),
-    ],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

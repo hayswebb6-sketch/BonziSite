@@ -1,0 +1,23 @@
+{
+  "frame_width": 256,
+  "frame_height": 384,
+  "fps": 15,
+  "motions": {
+    "wave": {
+      "frames": 24,
+      "description": "leans side to side with a lift, like a wave"
+    },
+    "dance": {
+      "frames": 30,
+      "description": "shuffles left and right, squashing on the beat"
+    },
+    "spin": {
+      "frames": 32,
+      "description": "pinches to zero width and back: a 2D 360 spin"
+    },
+    "globe": {
+      "frames": 36,
+      "description": "a real 3D globe spins in front of him"
+    }
+  }
+}
