@@ -45,6 +45,10 @@ jobs:
   macos:
     name: macOS app
     runs-on: macos-latest
+    # The macOS build has never been exercised. Keep a failure here from
+    # blocking the Windows publish, otherwise one broken runner means no
+    # artifact and no version stamp, and the site stays on 503 forever.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -87,6 +91,7 @@ jobs:
   publish:
     name: Publish artifacts + manifest
     needs: [windows, macos]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,10 +102,18 @@ jobs:
 
       - name: Stage into downloads/
         run: |
+          set -euo pipefail
           mkdir -p downloads
+          if [ ! -f artifacts/bonzi-windows/bonzi_buddy_windows.zip ]; then
+            echo "::error::no Windows artifact was produced, refusing to publish"
+            exit 1
+          fi
           cp artifacts/bonzi-windows/bonzi_buddy_windows.zip downloads/bonzi_buddy_v2.zip
           if [ -f artifacts/bonzi-macos/bonzi_buddy_mac.zip ]; then
             cp artifacts/bonzi-macos/bonzi_buddy_mac.zip downloads/bonzi_buddy_mac.zip
+            echo "macOS artifact included"
+          else
+            echo "::warning::macOS build unavailable, publishing Windows only"
           fi
           ls -l downloads
 
@@ -128,12 +141,3 @@ jobs:
           fi
           git commit -m "chore: publish Bonzi Buddy build from ${GITHUB_SHA::8}"
           git push
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/bonzi-windows/bonzi_buddy_windows.zip
-            artifacts/bonzi-macos/bonzi_buddy_mac.zip
-          draft: false
-          generate_release_notes: true
