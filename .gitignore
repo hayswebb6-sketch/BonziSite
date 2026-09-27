@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# PyInstaller output (regenerate with: pyinstaller bonzi_buddy_v2.spec)
+build/
+dist/
+
+# Duplicated release payload. The downloadable artifact that gets deployed is
+# downloads/bonzi_buddy_v2.zip, which stays tracked on purpose.
+downloads/dist/
+downloads/bonzi_buddy_v2/
+
+# Local env
+.env
