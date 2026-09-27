@@ -1,13 +1,77 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Bonzi Buddy</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bonzi Buddy</title>
+<meta name="description" content="The greatest digital friend ever created.">
+<meta name="theme-color" content="#1c1029">
+<link rel="icon" href="{{ url_for('static', filename='bonzi.png') }}" sizes="any">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 <body>
-    <h1>Bonzi Buddy</h1>
-    <p>The greatest digital friend ever created.</p>
-    
-    <a href="/download">Download Bonzi</a>
+
+<div class="desktop">
+  <div class="glow" aria-hidden="true"></div>
+
+  <main class="window" role="main">
+
+    <div class="titlebar">
+      <span class="titlebar__icon" aria-hidden="true"></span>
+      <h1 class="titlebar__text">Bonzi Buddy</h1>
+      <div class="titlebar__buttons">
+        <button class="sysbtn" type="button" aria-label="Minimise (does nothing)" data-taunt>
+          <span class="sysbtn__glyph sysbtn__glyph--min" aria-hidden="true"></span>
+        </button>
+        <button class="sysbtn" type="button" aria-label="Maximise (does nothing)" data-taunt>
+          <span class="sysbtn__glyph sysbtn__glyph--max" aria-hidden="true"></span>
+        </button>
+        <button class="sysbtn sysbtn--danger" type="button" id="close-btn" aria-label="Close (will be refused)">
+          <span class="sysbtn__glyph sysbtn__glyph--close" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="window__body">
+
+      <div class="portrait" id="portrait">
+        <img class="portrait__img" src="{{ url_for('static', filename='Designer.png') }}"
+             alt="Bonzi Buddy" width="1024" height="1536" decoding="async">
+        <div class="portrait__shadow" aria-hidden="true"></div>
+      </div>
+
+      <div class="pitch">
+        <p class="pitch__eyebrow">v2</p>
+        <p class="pitch__tagline">The greatest digital friend ever created.</p>
+        <p class="pitch__rotator" id="rotator" aria-hidden="true"></p>
+
+        <a class="btn" href="{{ url_for('download') }}" download>
+          <span class="btn__label">Download</span>
+          <span class="btn__meta">.exe &middot; 22 MB</span>
+        </a>
+
+        <p class="pitch__note" id="status" role="status">He is already here.</p>      </div>
+
+    </div>
+
+    <div class="taskbar">
+      <span class="taskbar__start">
+        <span class="taskbar__flag" aria-hidden="true"></span>
+        <span class="taskbar__word">start</span>
+      </span>
+      <span class="taskbar__item taskbar__item--active">
+        <span class="taskbar__dot" aria-hidden="true"></span>
+        Bonzi Buddy
+      </span>
+      <span class="taskbar__spacer"></span>
+      <span class="taskbar__clock" id="clock" aria-hidden="true"></span>
+    </div>
+
+  </main>
+
+  <p class="colophon">no uninstaller &middot; no terms of service &middot; no explanation</p>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
