@@ -28,8 +28,9 @@ APP_NAME="Bonzi Buddy"
 APP_VERSION="1.19"
 
 # Where the app looks for a newer build. Leave blank to disable self-update.
-# Example: "https://your-app.onrender.com/version.json"
-UPDATE_MANIFEST_URL=""
+# Serves {"version","url","sha256","size"}; the updater only acts when the
+# version is strictly newer, requires https, and verifies the checksum.
+UPDATE_MANIFEST_URL="https://bonzisite.onrender.com/version.json"
 
 SINGLE_INSTANCE_MUTEX="Local\\BonziBuddySingleInstance"
 ERROR_ALREADY_EXISTS=183
