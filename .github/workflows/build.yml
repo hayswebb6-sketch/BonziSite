@@ -104,6 +104,19 @@ jobs:
           fi
           ls -l downloads
 
+      - name: Stamp the version from the source that was just built
+        run: |
+          # Read APP_VERSION out of the exact file CI compiled, so the number
+          # can never describe a different binary than the one published.
+          VERSION=$(grep -oP 'APP_VERSION="\K[^"]+' BonziCode/bonzi_buddy_v2.py)
+          if [ -z "$VERSION" ]; then
+            echo "could not read APP_VERSION from BonziCode/bonzi_buddy_v2.py" >&2
+            exit 1
+          fi
+          printf '%s\n' "$VERSION" > downloads/version.txt
+          echo "published version $VERSION"
+          cat downloads/version.txt
+
       - name: Commit artifacts
         run: |
           git config user.name "github-actions[bot]"

@@ -14,14 +14,16 @@ VERSION_FILE=os.path.join(DOWNLOAD_DIR, "version.txt")
 _artifact_cache={}
 
 def app_version():
-    # Falls back to a sane value if the file is missing so the endpoint never
-    # takes the whole site down.
+    # Written only by CI, in the same commit as the artifact it describes.
+    # A hand-written version could advertise a new number next to a stale
+    # binary, which makes an older install download the old build and then
+    # update-stamp itself into a loop. Absence means "nothing published yet".
     try:
         with open(VERSION_FILE, encoding="utf-8") as handle:
             text=handle.read().strip()
-        return text or "0"
+        return text or None
     except OSError:
-        return "0"
+        return None
 
 def artifact_digest(filename):
     """sha256 + size for a build artifact, computed once and cached."""
@@ -76,11 +78,15 @@ def download_mac():
     return send_from_directory("downloads", MAC_ARTIFACT, as_attachment=True)
 
 def _manifest(filename, endpoint):
+    version=app_version()
+    if version is None:
+        return jsonify({"error": "no release published yet"}), 503
+
     info=artifact_digest(filename)
     if info is None:
         return jsonify({"error": "no build available"}), 503
     return jsonify({
-        "version": app_version(),
+        "version": version,
         "url": absolute_url(endpoint),
         "sha256": info["sha256"],
         "size": info["size"],
