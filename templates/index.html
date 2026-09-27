@@ -20,7 +20,8 @@
   <main class="window" role="main">
 
     <div class="titlebar">
-      <span class="titlebar__icon" aria-hidden="true"></span>
+      <img class="titlebar__icon" src="{{ url_for('static', filename='favicon-32.png') }}"
+           alt="" width="17" height="17" decoding="async" aria-hidden="true">
       <h1 class="titlebar__text">Bonzi Buddy</h1>
       <div class="titlebar__buttons">
         <button class="sysbtn" type="button" aria-label="Minimise (does nothing)" data-taunt>

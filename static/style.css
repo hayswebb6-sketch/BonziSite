@@ -130,15 +130,13 @@ body {
   border-bottom: 1px solid var(--chrome-dk);
 }
 
+/* the real face here too, instead of a CSS flag */
 .titlebar__icon {
   width: 1.05rem;
   height: 1.05rem;
   flex: none;
-  background: var(--ink-200);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.35);
-  /* four-pane nod to the classic flag, drawn in CSS */
-  clip-path: polygon(0 0, 100% 0, 100% 42%, 0 42%, 0 58%, 100% 58%, 100% 100%, 0 100%);
-  opacity: 0.9;
+  border-radius: 2px;
+  object-fit: contain;
 }
 
 .titlebar__text {
