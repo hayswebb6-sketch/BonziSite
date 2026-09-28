@@ -85,6 +85,20 @@
           <a href="{{ url_for('download_mac_arch', arch='arm64') }}" download>Prefer the native Apple Silicon build?</a>
           {% endif %}
         </p>
+        <details class="pitch__fineprint">
+          <summary>Some of him needs permission on a Mac</summary>
+          <p>
+            macOS treats reading keys, seeing which app is in front and using
+            the clipboard as private, and a refused permission looks exactly
+            like a broken feature. Under
+            <strong>Privacy&nbsp;&amp;&nbsp;Security</strong>, add Bonzi Buddy to
+            <strong>Accessibility</strong> for the keylog,
+            <strong>Screen&nbsp;Recording</strong> for seeing what you are
+            working in, and <strong>Automation</strong> for the AppleScript
+            behind both. An ad&#8209;hoc build is replaced by every rebuild, so
+            expect to add yourself again after an update.
+          </p>
+        </details>
         {% endif %}
 
         <p class="pitch__note" id="status" role="status">He is already here.</p>

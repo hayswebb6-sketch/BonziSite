@@ -40,7 +40,7 @@ MOTIONS={
     "wave":        (24, "leans side to side with a lift, like a wave"),
     "dance":       (30, "shuffles left and right, squashing on the beat"),
     "spin":        (32, "pinches to zero width and back: a 2D 360 spin"),
-    "globe":       (36, "a real 3D globe spins in front of him"),
+    "globe":       (36, "a lit 3D globe he holds at chest height while it turns"),
 }
 
 
@@ -109,38 +109,155 @@ def make_flat_material(image, name):
     return mat
 
 
+def _value_noise(shape, cells, rng):
+    """Smooth value noise on a lat/lon grid, wrapping in longitude.
+
+    The wrap matters: the texture is equirectangular and gets wrapped around a
+    sphere, so a seam where the noise jumps would show as a hard meridian line
+    on the finished globe.
+    """
+    height, width=shape
+    cols=max(2, cells * 2)
+    grid=rng.random((cells, cols)).astype(np.float32)
+
+    ys=np.linspace(0.0, cells - 1, height)
+    xs=np.linspace(0.0, cols, width, endpoint=False)
+    y0=np.floor(ys).astype(int)
+    y1=np.minimum(y0 + 1, cells - 1)
+    x0=np.floor(xs).astype(int)
+    x1=(x0 + 1) % cols
+
+    ty=(ys - y0)[:, None]
+    tx=(xs - x0)[None, :]
+    ty=ty * ty * (3.0 - 2.0 * ty)
+    tx=tx * tx * (3.0 - 2.0 * tx)
+
+    a=grid[np.ix_(y0, x0)]
+    b=grid[np.ix_(y0, x1)]
+    c=grid[np.ix_(y1, x0)]
+    d=grid[np.ix_(y1, x1)]
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty
+
+
 def make_globe_texture(width=1024, height=512):
-    """Equirectangular globe: ocean, landmasses, ice caps."""
-    rng=np.random.default_rng(7)
+    """Equirectangular globe: ocean, continent noise, latitude biomes, ice caps.
+
+    This used to place seven random ellipses of green on a flat blue field. On a
+    sphere that reads as a face, because random ellipses on a ball inevitably
+    produce a roughly symmetric pair, and a symmetric pair of dark spots on a
+    round lit object is a face whether or not anyone meant it to be.
+
+    Fractal noise fixes the face problem structurally: the coastlines are
+    irregular at every scale, so there is nothing to pair up. The latitude
+    bands then do most of the remaining work, because a planet with green
+    tropics, tan deserts around the subtropics and white poles reads as Earth
+    long before the coastline detail resolves at this size.
+
+    Deliberately no clouds and no specular highlight. Both add a bright
+    off-centre blob, which is another way to accidentally draw eyes.
+    """
+    rng=np.random.default_rng(20260928)
+
     lat=np.linspace(-math.pi / 2, math.pi / 2, height)[:, None]
     lon=np.linspace(-math.pi, math.pi, width)[None, :]
+    shape=(height, width)
 
+    # four octaves: continents, then progressively smaller detail
+    field=np.zeros(shape, dtype=np.float32)
+    amplitude=1.0
+    total=0.0
+    for cells in (3, 6, 12, 24):
+        field+=amplitude * _value_noise(shape, cells, rng)
+        total+=amplitude
+        amplitude*=0.5
+    field/=total
+
+    # Push the distribution toward land or sea rather than sitting on the
+    # threshold, so coastlines are crisp instead of 50% speckle. 0.65 lands
+    # near 30% land, which is about what Earth actually has; the lower values
+    # tried first came out at 40% and read as a mostly-land planet.
+    field=(field - field.mean()) / (field.std() + 1e-6)
+    land=field > 0.65
+
+    depth=np.clip(0.5 + field * 0.5, 0.0, 1.0)
     ocean=np.zeros((height, width, 4), dtype=np.float32)
-    ocean[..., 0]=0.09
-    ocean[..., 1]=0.32
-    ocean[..., 2]=0.62
+    ocean[..., 0]=0.05 + 0.04 * (1.0 - depth)
+    ocean[..., 1]=0.24 + 0.16 * (1.0 - depth)
+    ocean[..., 2]=0.52 + 0.22 * (1.0 - depth)
     ocean[..., 3]=1.0
 
-    # a few soft landmasses so the rotation is legible
-    land=np.zeros((height, width), dtype=bool)
-    for _ in range(7):
-        clat=rng.uniform(-1.1, 1.1)
-        clon=rng.uniform(-math.pi, math.pi)
-        rlat=rng.uniform(0.22, 0.62)
-        rlon=rng.uniform(0.35, 0.9)
-        blob=(((lat - clat) / rlat) ** 2 + (((lon - clon + math.pi) % (2 * math.pi) - math.pi) / rlon) ** 2) < 1.0
-        land |= blob
+    abs_lat=np.abs(lat)
+    # green near the equator, tan through the desert belts, olive toward the
+    # poles before the ice takes over.
+    # abs_lat is (height, 1), so these masks have to be repeated across width
+    # before they are combined with the (3,) colour vectors. Without that, the
+    # where() below collapses to (height, 3) and the boolean assignment fails.
+    desert=np.repeat((abs_lat > 0.32) & (abs_lat < 0.82), width, axis=1)
+    cold=np.repeat(abs_lat >= 0.82, width, axis=1)
+    green=np.array((0.13, 0.42, 0.19), dtype=np.float32)
+    tan=np.array((0.55, 0.47, 0.28), dtype=np.float32)
+    olive=np.array((0.33, 0.36, 0.28), dtype=np.float32)
+    land_colour=np.where(desert, tan, green)
+    land_colour=np.where(cold, olive, land_colour).astype(np.float32)
+    ocean[land]=np.concatenate(
+        [land_colour, np.ones((land_colour.shape[0], land_colour.shape[1], 1),
+                              dtype=np.float32)], axis=2
+    )
 
-    for row, colour in ((land, (0.16, 0.52, 0.24, 1.0)),):
-        ocean[row]=colour
-
-    # ice caps - lat is (height, 1), so broadcast before boolean indexing
-    caps=np.repeat(np.abs(lat) > 1.28, width, axis=1)
-    ocean[caps]=(0.92, 0.95, 0.98, 1.0)
+    caps=np.repeat(abs_lat > 1.30, width, axis=1)
+    ocean[caps]=(0.88, 0.93, 0.97, 1.0)
 
     img=bpy.data.images.new("globe", width=width, height=height, alpha=True)
     img.pixels=ocean.ravel()
     return img
+
+
+def make_globe_material(image, name):
+    """A lit material, unlike every other surface in this scene.
+
+    The flat emission material is right for Bonzi, who is a 2D cutout and would
+    look wrong under a light. A sphere needs the opposite: a diffuse term with
+    a real light behind it, so it has a terminator and a shaded side and reads
+    as a solid ball. Pure emission on a sphere is what made the old globe look
+    like a flat mask with a face painted on it.
+
+    The emission term is kept at a low weight so the globe still sits at the
+    same brightness as the rest of the art instead of going dark on the side
+    away from the light.
+    """
+    mat=bpy.data.materials.new(name)
+    mat.use_nodes=True
+    nodes=mat.node_tree.nodes
+    links=mat.node_tree.links
+    nodes.clear()
+
+    tex=nodes.new("ShaderNodeTexImage")
+    tex.image=image
+    tex.interpolation="Linear"
+    tex.location=(-620, 0)
+
+    diff=nodes.new("ShaderNodeBsdfDiffuse")
+    diff.location=(-340, 120)
+    diff.inputs["Color"].default_value=(1.0, 1.0, 1.0, 1.0)
+    diff.inputs["Roughness"].default_value=0.85
+
+    emit=nodes.new("ShaderNodeEmission")
+    emit.location=(-340, -120)
+    emit.inputs["Strength"].default_value=0.45
+
+    mix=nodes.new("ShaderNodeMixShader")
+    mix.location=(-100, 0)
+    mix.inputs[0].default_value=0.42
+
+    out=nodes.new("ShaderNodeOutputMaterial")
+    out.location=(140, 0)
+
+    links.new(tex.outputs["Color"], diff.inputs["Color"])
+    links.new(tex.outputs["Color"], emit.inputs["Color"])
+    links.new(diff.outputs["BSDF"], mix.inputs[1])
+    links.new(emit.outputs["Emission"], mix.inputs[2])
+    links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    return mat
 
 
 def setup_scene():
@@ -170,6 +287,16 @@ def setup_scene():
     cam.location=(0.0, 0.0, 1.0)
     scene.collection.objects.link(cam)
     scene.camera=cam
+
+    # One light, upper left, so the globe gets a terminator. Bonzi's plane is
+    # emission-only and is unaffected by this, so it does not wash him out.
+    light_data=bpy.data.lights.new("key", type="SUN")
+    light_data.energy=3.2
+    light_data.angle=math.radians(12.0)
+    light=bpy.data.objects.new("key", light_data)
+    light.location=(-0.6, 0.8, 0.9)
+    light.rotation_euler=Euler((math.radians(42.0), 0.0, math.radians(38.0)))
+    scene.collection.objects.link(light)
     return scene
 
 
@@ -186,10 +313,25 @@ def add_bonzi(scene):
     return plane
 
 
+# Where the globe sits relative to Bonzi. The frame is 0.256 x 0.384 world
+# units (half of 0.256 is 0.128, half of 0.384 is 0.192), so these numbers are
+# small fractions of the visible area.
+#
+# The old values put the ball at z=+0.05, which is a fifth of the frame height
+# floating in front of the picture plane with nothing touching it, and gave it
+# its own bob on top of Bonzi's. Two independent bobs on a detached object is
+# exactly the levitating look. It now sits low and forward, overlapping his
+# silhouette at chest height so it reads as something he is holding, and it
+# moves with him instead of on its own.
+GLOBE_RADIUS=0.042
+GLOBE_HOME=(0.050, -0.044, 0.016)
+GLOBE_TILT=math.radians(24.0)
+
+
 def add_globe(scene):
-    mat=make_flat_material(make_globe_texture(), "globe")
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.040, segments=64, ring_count=32,
-                                         location=(0.058, -0.030, 0.05))
+    mat=make_globe_material(make_globe_texture(), "globe")
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=GLOBE_RADIUS, segments=64,
+                                         ring_count=32, location=GLOBE_HOME)
     globe=bpy.context.object
     globe.name="globe"
     globe.data.materials.append(mat)
@@ -251,14 +393,23 @@ def pose_spin(plane, f, t):
 
 
 def pose_globe(plane, f, t):
+    # Bob with him rather than independently. The amplitude used to be 0.010
+    # here plus 0.006 on the globe, and the two drifted against each other,
+    # which measured as a 26px twitch on the silhouette across the loop and
+    # read as the globe hovering rather than being held.
     bob=math.sin(t * 2.0)
-    plane.location=(0.0, 0.010 * bob, 0.0)
-    plane.scale=(FRAME_W / 2000.0, FRAME_H / 2000.0 * (1.0 + 0.02 * bob), 1.0)
+    plane.location=(0.0, 0.004 * bob, 0.0)
+    plane.scale=(FRAME_W / 2000.0, FRAME_H / 2000.0 * (1.0 + 0.008 * bob), 1.0)
 
 
 def spin_globe(globe, f, t):
-    globe.rotation_euler=(math.radians(18.0), 0.0, -t)
-    globe.location=(0.058, -0.030 + 0.006 * math.sin(t * 2.0), 0.05)
+    # Rotation is the point of this motion, so it stays a full turn per loop.
+    # The tilt is on X so the poles are visible, and the location carries only
+    # the same small bob as Bonzi.
+    globe.rotation_euler=(GLOBE_TILT, 0.0, -t)
+    globe.location=(GLOBE_HOME[0],
+                    GLOBE_HOME[1] + 0.0025 * math.sin(t * 2.0),
+                    GLOBE_HOME[2])
 
 
 def main():

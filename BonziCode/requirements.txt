@@ -6,6 +6,13 @@ PyGetWindow>=0.0.9,<1; sys_platform == "win32"
 pywin32>=306; sys_platform == "win32"
 winotify>=1.1,<2; sys_platform == "win32"
 
+# macOS-only. The keylog uses NSEvent.addGlobalMonitorForEventsMatchingMask,
+# which lives in AppKit and therefore needs pyobjc. Without this the import
+# fails at runtime and macOS silently has no keylog, since the failure looks
+# identical to a bug. Reading keys also needs Accessibility permission, which
+# the app asks for the first time the keylog window opens.
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+
 pillow>=10
 
 # Build-time only: produces dist/bonzi_buddy_v2.exe on Windows and

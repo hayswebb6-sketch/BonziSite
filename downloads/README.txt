@@ -8,7 +8,12 @@ artifacts into downloads/. The site then serves them:
     downloads/bonzi_buddy_v2.zip           ->  /download
     downloads/bonzi_buddy_mac_x86_64.zip   ->  /download-mac
     downloads/bonzi_buddy_mac_arm64.zip    ->  /download-mac/arm64
-    downloads/version.txt                  ->  the version in /version.json
+
+Each zip carries a version.txt *inside* it, and that is where the version in
+/version.json comes from. The stamp and the binary are the same file, so they
+cannot describe different builds, and the manifest does not depend on any
+separate file having been written. An artifact with no stamp inside is reported
+as unstamped rather than given a version that might not be its own.
 
 The macOS build is published twice, once per CPU architecture. /download-mac
 serves the Intel build, which is the right default because Apple Silicon still
@@ -73,6 +78,34 @@ launch. Right-click Bonzi Buddy.app and choose Open. That is a one-time thing
 per download. Notarising properly needs a paid Apple Developer ID, which is not
 configured for this repository.
 
+macOS permissions, and why a feature can look broken
+----------------------------------------------------
+
+Several things Bonzi does are gated behind macOS privacy permissions, and a
+refused permission is indistinguishable from a bug: the feature just does
+nothing. If something below does not work, this is the place to look first.
+
+  System Settings > Privacy & Security > Accessibility
+      Needed by the visible keylog. It uses NSEvent's global monitor, which
+      macOS only feeds to an app the user has explicitly approved. Without
+      this the keylog window opens and stays empty. It also needs
+      pyobjc-framework-Cocoa from requirements.txt, which is installed
+      automatically on macOS and deliberately not on Windows.
+
+  System Settings > Privacy & Security > Screen Recording
+      Needed to see which app is in front, and by anything that captures the
+      screen. Until it is granted, foreground detection returns nothing and
+      Bonzi cannot tell what you are working in.
+
+  System Settings > Privacy & Security > Automation
+      Needed for the AppleScript that reads the frontmost app and sets the
+      clipboard. macOS prompts for this the first time either runs, and
+      declining it silently disables both.
+
+Add Bonzi Buddy to each list by hand if macOS did not prompt, since an
+ad-hoc-signed build can be replaced by a rebuild and lose the approval. The
+battery readout uses pmset and needs none of these.
+
 Turning on self-update
 ----------------------
 
@@ -81,8 +114,16 @@ In bonzi_buddy_v2.py:
     UPDATE_MANIFEST_URL="https://<your-site-host>/version.json"
 
 Leave it blank to disable self-update. The updater refuses plain http, and
-only acts when the manifest version is strictly newer than APP_VERSION, so
-bump APP_VERSION together with downloads/version.txt.
+only acts when the manifest version is strictly newer than APP_VERSION.
 
-CI greps APP_VERSION out of the file it just compiled, so downloads/version.txt
-can never describe a different binary than the one that was published.
+Bump APP_VERSION and the build picks it up from there. Packaging writes the
+value into the zip, so there is no second file to keep in step and no way to
+publish a number that does not belong to the binary sitting next to it. Two
+rules worth knowing:
+
+  - The manifest URL must come back as https. Behind Render the forwarded
+    X-Forwarded-Proto header is read directly, because request.url_root
+    reports http there and the updater rejects plain http outright.
+  - A push that only touches downloads/ does not trigger a build. The publish
+    job commits artifacts back to main, and without that exclusion every run
+    would rebuild every platform to produce an identical tree.
