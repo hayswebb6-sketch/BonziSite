@@ -1266,6 +1266,7 @@ _mouse_restore_job=None
 def hide_mouse():
     global _mouse_restore_job
     set_cursor_visible(False)
+    _spawn_cursor_watchdog()
     if _mouse_restore_job is not None:
         # Already counting down. set_cursor_visible is idempotent, so the extra
         # hide was a no-op; do not stack a second timer that would restore the
@@ -1284,7 +1285,9 @@ def show_mouse():
         _mouse_restore_job=None
 
 def x_pressed():
-    # he spins and refuses, every time
+    # He does not close. You can click the X, alt-tab and close him, right
+    # click him, ask nicely - and you get this instead. Task Manager is the
+    # only thing that actually works, which is the joke.
     play_motion("spin")
 
     number=random.randint(2,5)
@@ -1309,6 +1312,61 @@ def x_pressed():
     hide_mouse()
 
     notify(chosen_xmsg)
+
+def _spawn_cursor_watchdog():
+    """Restore the system cursor from outside this process, just in case.
+
+    SetSystemCursor edits a system-wide setting, so an invisible arrow survives
+    the process that set it. The chaos routine hides the cursor and refuses to
+    close, and Task Manager is the only way to actually stop him, so the window
+    where he is killed mid-hide is wide open. A user who does that would be
+    left with no mouse until they logged off or rebooted.
+
+    powershell does not care whether Bonzi is still alive, so it does the
+    restore whether he was closed politely or shot.
+
+    This writes a .ps1 and runs that rather than passing -Command inline. The
+    DllImport attribute needs escaped double quotes inside a PowerShell string,
+    and those do not survive a trip through a command line argument intact.
+    """
+    if not IS_WINDOWS:
+        return
+    import tempfile
+
+    script_path=os.path.join(tempfile.gettempdir(), "bonzi_cursor_watchdog.ps1")
+    body=(
+        "Start-Sleep -Seconds 12\n"
+        "$sig = @'\n"
+        '[DllImport("user32.dll")] public static extern IntPtr LoadCursorW('
+        "IntPtr h, string s);\n"
+        '[DllImport("user32.dll")] public static extern bool SetSystemCursor('
+        "IntPtr h, uint o, uint i);\n"
+        "'@\n"
+        "$t = Add-Type -MemberDefinition $sig -Name Cursor -Namespace BonziWD"
+        " -PassThru\n"
+        "$c = $t::LoadCursorW([IntPtr]::Zero, 'IDC_ARROW')\n"
+        "if ($c -ne [IntPtr]::Zero) { $t::SetSystemCursor($c, 0x4001, 32512) }\n"
+    )
+    try:
+        with open(script_path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+    except OSError as error:
+        log_error(f"could not write the cursor watchdog: {error!r}")
+        return
+
+    flags=(
+        getattr(subprocess, "DETACHED_PROCESS", 0)
+        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    )
+    try:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+             "Bypass", "-WindowStyle", "Hidden", "-File", script_path],
+            creationflags=flags, close_fds=True,
+        )
+    except Exception as error:
+        log_error(f"cursor watchdog failed to start: {error!r}")
 
 # ---- help ----------------------------------------------------------------
 # He is mostly chaos, but not all of it. Every so often he does something
@@ -2242,7 +2300,12 @@ def _toggle_key_log():
 def bonzi_menu(event=None):
     """Deliberate-only entry point for the two things he should not do by
     accident. Nothing that reads the keyboard is ever in the random action
-    list; it takes an explicit click here."""
+    list; it takes an explicit click here.
+
+    There is deliberately no quit entry in here. The X on his title bar is the
+    only way to close him, and adding a second one behind a right click would
+    be exactly the kind of hidden gesture this menu does not want to have.
+    """
     import tkinter as _tk
 
     menu=_tk.Menu(window, tearoff=0, bg="#1b1030", fg="white",
@@ -2254,8 +2317,6 @@ def bonzi_menu(event=None):
     menu.add_command(label="Look at my screen", command=peek_at_screen)
     menu.add_separator()
     menu.add_command(label="Ask for help", command=lambda: help_human())
-    menu.add_separator()
-    menu.add_command(label="He insists on closing", command=x_pressed)
     try:
         menu.tk_popup(event.x_root, event.y_root)
     finally:
