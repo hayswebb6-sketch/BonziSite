@@ -96,15 +96,22 @@ jobs:
         include:
           - arch: arm64
             runner: macos-15
+            pyarch: arm64
+          # arch names the artifact, so it stays x86_64 to match the download
+          # name the site and the app's self-updater look for. setup-python does
+          # not take that name: its architecture input is x64 / x86 / x64-32 /
+          # arm64 / arm, and x86_64 is rejected outright, which is what killed
+          # the whole Intel job before it built anything.
           - arch: x86_64
             runner: macos-15-intel
+            pyarch: x64
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          architecture: ${{ matrix.arch }}
+          architecture: ${{ matrix.pyarch }}
 
       - name: Install dependencies
         run: |
@@ -146,13 +153,20 @@ jobs:
       - name: Ad-hoc sign and package
         working-directory: BonziCode
         run: |
+          set -euo pipefail
           codesign --force --deep --sign - "dist/Bonzi Buddy.app"
           codesign --verify --deep --strict "dist/Bonzi Buddy.app"
           ditto -c -k --sequesterRsrc --keepParent \
             "dist/Bonzi Buddy.app" "dist/bonzi_buddy_mac_${{ matrix.arch }}.zip"
           # Same stamp as the Windows build, read from the file just compiled
           # and injected into the finished zip with -j so it sits at the root.
-          VERSION=$(grep -oP 'APP_VERSION="\K[^"]+' bonzi_buddy_v2.py)
+          #
+          # sed, not grep -oP: macOS ships BSD grep, which has no -P. The -P
+          # version of this line worked on Linux and failed on every mac runner
+          # with "invalid option -- P", and because the mac shell is bash -e the
+          # job died there and threw away an .app that had already built and
+          # signed successfully. sed -n works identically on BSD and GNU.
+          VERSION=$(sed -n 's/^APP_VERSION="\([^"]*\)".*/\1/p' bonzi_buddy_v2.py | head -1)
           if [ -z "$VERSION" ]; then
             echo "could not read APP_VERSION from bonzi_buddy_v2.py" >&2
             exit 1
