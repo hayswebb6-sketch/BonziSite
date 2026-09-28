@@ -137,11 +137,22 @@ jobs:
       - name: Verify the bundle
         working-directory: BonziCode
         run: |
+          set -euo pipefail
           BIN="dist/Bonzi Buddy.app/Contents/MacOS/Bonzi Buddy"
           test -x "$BIN"
           lipo -archs "$BIN"
           test -d "dist/Bonzi Buddy.app/Contents/Frameworks"
           test -d "dist/Bonzi Buddy.app/Contents/Resources/frames"
+
+      # The checks above all ask whether the files are the right shape, which is
+      # not the same as whether the program starts. This launches the bundle
+      # that was just built as a real GUI app on the runner's window server, and
+      # fails the build if it dies, never reaches main(), or cannot load its
+      # frames. Without it a broken mac download is only discovered by whoever
+      # clicks the button, which is the worst possible place to find out.
+      - name: Smoke test the bundle
+        working-directory: BonziCode
+        run: bash tools/smoke_test.sh
 
       # An unsigned .app is quarantined on first launch, so an ad-hoc signature
       # is applied to at least make the bundle self-consistent. The site tells
