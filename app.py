@@ -1,5 +1,6 @@
 import hashlib
 import os
+import zipfile
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
@@ -19,21 +20,42 @@ MAC_ARTIFACTS={
 }
 MAC_DEFAULT_ARCH="x86_64"
 
-VERSION_FILE=os.path.join(DOWNLOAD_DIR, "version.txt")
+# The version is stored *inside* each artifact, not beside it. An earlier
+# design read downloads/version.txt, which only CI ever wrote, so one dead
+# publish job meant every manifest 503'd and self-update silently did nothing
+# forever. Putting the stamp in the zip makes the number and the binary the
+# same file: it is impossible to advertise a version that does not match the
+# build, and the manifest works with or without CI.
+VERSION_MEMBER="version.txt"
 
 _artifact_cache={}
+_version_cache={}
 
-def app_version():
-    # Written only by CI, in the same commit as the artifact it describes.
-    # A hand-written version could advertise a new number next to a stale
-    # binary, which makes an older install download the old build and then
-    # update-stamp itself into a loop. Absence means "nothing published yet".
+def artifact_version(filename):
+    """Read the version stamp from inside the artifact zip.
+
+    Returns None when the artifact carries no stamp, which means "do not
+    advertise this build". Guessing from the source tree instead would let a
+    fresh APP_VERSION sit next to a stale binary, so an older install would
+    download an older build and stamp itself backwards into a loop.
+    """
+    if filename in _version_cache:
+        return _version_cache[filename]
+
+    path=os.path.join(DOWNLOAD_DIR, filename)
+    version=None
     try:
-        with open(VERSION_FILE, encoding="utf-8") as handle:
-            text=handle.read().strip()
-        return text or None
-    except OSError:
-        return None
+        with zipfile.ZipFile(path) as archive:
+            for name in archive.namelist():
+                if os.path.basename(name)!=VERSION_MEMBER:
+                    continue
+                version=archive.read(name).decode("utf-8", "replace").strip() or None
+                break
+    except (OSError, zipfile.BadZipFile, KeyError):
+        version=None
+
+    _version_cache[filename]=version
+    return version
 
 def artifact_available(filename):
     return os.path.isfile(os.path.join(DOWNLOAD_DIR, filename))
@@ -60,8 +82,17 @@ def artifact_digest(filename):
     return result
 
 def absolute_url(endpoint):
-    # request.url_root keeps the manifest correct behind any host or proxy.
-    return request.url_root.rstrip("/") + "/" + endpoint.lstrip("/")
+    # The manifest URL has to come back as https, because the app refuses to
+    # update over plain http. Render terminates TLS and forwards with
+    # X-Forwarded-Proto, but nothing here applies ProxyFix, so request.url_root
+    # can report http even though the browser is on https. Trusting url_root
+    # alone therefore disables self-update in production while every local test
+    # passes, so the forwarded headers are read directly.
+    proto=(request.headers.get("X-Forwarded-Proto") or request.scheme).split(",")[0].strip()
+    host=(request.headers.get("X-Forwarded-Host") or request.host).split(",")[0].strip()
+    if proto not in ("http", "https"):
+        proto="https"
+    return f"{proto}://{host}".rstrip("/") + "/" + endpoint.lstrip("/")
 
 def not_ready(what):
     # 503, not 404: nothing is wrong with the link, the build just has not
@@ -69,7 +100,7 @@ def not_ready(what):
     # exist", which is how the missing macOS artifact went unnoticed.
     return (
         f"<h1>{what} is not ready yet</h1>"
-        "<p>CI has not published this build to this branch yet. "
+        "<p>No stamped build of this kind has been published yet. "
         "<a href='/'>Return to Bonzi Buddy</a></p>",
         503,
     )
@@ -92,6 +123,9 @@ def bonzi():
         windows_ready=artifact_available(WINDOWS_ARTIFACT),
         mac_ready=any(artifact_available(name) for name in MAC_ARTIFACTS.values()),
         mac_arm_ready=artifact_available(MAC_ARTIFACTS["arm64"]),
+        # Read from the published artifact rather than hardcoded, so the page
+        # cannot claim a version the download does not actually have.
+        version=artifact_version(WINDOWS_ARTIFACT) or "unpublished",
     )
 
 @app.route('/download')
@@ -117,13 +151,20 @@ def download_mac_arch(arch):
     return _download_mac(arch)
 
 def _manifest(filename, endpoint):
-    version=app_version()
-    if version is None:
-        return jsonify({"error": "no release published yet"}), 503
-
     info=artifact_digest(filename)
     if info is None:
         return jsonify({"error": "no build available"}), 503
+
+    version=artifact_version(filename)
+    if version is None:
+        # The artifact is real but carries no version stamp, so there is no
+        # honest way to answer "is this newer?". Saying so beats inventing a
+        # number, which is what made this endpoint lie before.
+        return jsonify({
+            "error": "build carries no version stamp",
+            "artifact": filename,
+        }), 503
+
     return jsonify({
         "version": version,
         "url": absolute_url(endpoint),

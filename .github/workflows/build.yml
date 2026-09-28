@@ -5,6 +5,12 @@ name: build
 on:
   push:
     branches: [main]
+    # The publish job commits downloads/ back to main. Without this, that
+    # commit re-triggers a full Windows + macOS build, which republishes an
+    # identical tree. A push that touches only downloads/ is not a code
+    # change, so it should not start a build.
+    paths-ignore:
+      - "downloads/**"
   workflow_dispatch:
 
 permissions:
@@ -37,11 +43,21 @@ jobs:
         working-directory: BonziCode
         run: pyinstaller --clean --noconfirm bonzi_buddy_v2.spec
 
+      # version.txt goes *inside* the zip. The site reads the version out of
+      # the artifact it is about to hand out, so the number and the binary
+      # cannot disagree, and /version.json works even if this commit is the
+      # only thing that ever succeeded.
       - name: Package
         working-directory: BonziCode
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/bonzi_buddy_v2.exe -DestinationPath dist/bonzi_buddy_windows.zip
+          $match = Select-String -Path bonzi_buddy_v2.py -Pattern 'APP_VERSION="([^"]+)"' | Select-Object -First 1
+          if (-not $match) { throw "could not read APP_VERSION from bonzi_buddy_v2.py" }
+          $version = $match.Matches[0].Groups[1].Value
+          Set-Content -Path dist/version.txt -Value $version -NoNewline
+          Compress-Archive -Path dist/bonzi_buddy_v2.exe, dist/version.txt `
+                           -DestinationPath dist/bonzi_buddy_windows.zip
+          Write-Output "packaged $version"
           Get-FileHash -Algorithm SHA256 dist/bonzi_buddy_windows.zip | Select-Object -ExpandProperty Hash
 
       - uses: actions/upload-artifact@v4
@@ -115,6 +131,17 @@ jobs:
           codesign --verify --deep --strict "dist/Bonzi Buddy.app"
           ditto -c -k --sequesterRsrc --keepParent \
             "dist/Bonzi Buddy.app" "dist/bonzi_buddy_mac_${{ matrix.arch }}.zip"
+          # Same stamp as the Windows build, read from the file just compiled
+          # and injected into the finished zip with -j so it sits at the root.
+          VERSION=$(grep -oP 'APP_VERSION="\K[^"]+' bonzi_buddy_v2.py)
+          if [ -z "$VERSION" ]; then
+            echo "could not read APP_VERSION from bonzi_buddy_v2.py" >&2
+            exit 1
+          fi
+          mkdir -p build
+          printf '%s\n' "$VERSION" > build/version.txt
+          zip -j -q "dist/bonzi_buddy_mac_${{ matrix.arch }}.zip" build/version.txt
+          echo "packaged macOS ${{ matrix.arch }} $VERSION"
           ls -l dist
 
       - uses: actions/upload-artifact@v4
@@ -152,31 +179,33 @@ jobs:
             exit 1
           fi
           cp artifacts/bonzi-windows/bonzi_buddy_windows.zip downloads/bonzi_buddy_v2.zip
-          cp artifacts/bonzi-macos-x86_64/bonzi_buddy_mac_x86_64.zip \
-             downloads/bonzi_buddy_mac_x86_64.zip
-          if [ -f artifacts/bonzi-macos-arm64/bonzi_buddy_mac_arm64.zip ]; then
-            cp artifacts/bonzi-macos-arm64/bonzi_buddy_mac_arm64.zip \
-               downloads/bonzi_buddy_mac_arm64.zip
-            echo "macOS: Intel + Apple Silicon"
-          else
-            # The Intel build runs on Apple Silicon under Rosetta 2, so this is
-            # a partial macOS release rather than no macOS release.
-            echo "::warning::macOS arm64 build unavailable, publishing Intel only"
+          # Both mac slices are optional. The Intel build runs on Apple Silicon
+          # under Rosetta 2, so a missing arch is a partial release rather than
+          # a failed one. This guard is what actually makes the job-level
+          # comment true: before, this single unguarded cp aborted the whole
+          # step under `set -e`, so one broken Mac runner meant no Windows
+          # artifact, no manifest and a site stuck on 503.
+          mac_found=0
+          for arch in x86_64 arm64; do
+            src="artifacts/bonzi-macos-${arch}/bonzi_buddy_mac_${arch}.zip"
+            if [ -f "$src" ]; then
+              cp "$src" "downloads/bonzi_buddy_mac_${arch}.zip"
+              mac_found=1
+              echo "macOS: published ${arch}"
+            else
+              echo "::warning::macOS ${arch} build unavailable, skipping"
+            fi
+          done
+          if [ "$mac_found" -eq 0 ]; then
+            echo "::warning::no macOS build succeeded this run; publishing Windows only"
           fi
           ls -l downloads
 
-      - name: Stamp the version from the source that was just built
-        run: |
-          # Read APP_VERSION out of the exact file CI compiled, so the number
-          # can never describe a different binary than the one published.
-          VERSION=$(grep -oP 'APP_VERSION="\K[^"]+' BonziCode/bonzi_buddy_v2.py)
-          if [ -z "$VERSION" ]; then
-            echo "could not read APP_VERSION from BonziCode/bonzi_buddy_v2.py" >&2
-            exit 1
-          fi
-          printf '%s\n' "$VERSION" > downloads/version.txt
-          echo "published version $VERSION"
-          cat downloads/version.txt
+      # There used to be a step here that wrote downloads/version.txt beside
+      # the artifacts. It was the only source of truth for the manifest, so a
+      # failure anywhere above left the site answering 503 forever while the
+      # app logged a line and moved on. The stamp now lives inside each zip
+      # next to the binary it describes, so there is nothing here to fail.
 
       - name: Commit artifacts
         run: |
