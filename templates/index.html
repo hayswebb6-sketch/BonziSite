@@ -50,16 +50,42 @@
         <p class="pitch__rotator" id="rotator" aria-hidden="true"></p>
 
         <div class="downloads">
+          {% if windows_ready %}
           <a class="btn" href="{{ url_for('download') }}" download>
             <span class="btn__label">Download for Windows</span>
             <span class="btn__meta" data-size-for=".exe">.exe &middot; 22 MB</span>
           </a>
+          {% else %}
+          {# a dead link is worse than an honest one: CI has not landed this yet #}
+          <span class="btn btn--off" aria-disabled="true">
+            <span class="btn__label">Download for Windows</span>
+            <span class="btn__meta">build in progress</span>
+          </span>
+          {% endif %}
 
+          {% if mac_ready %}
           <a class="btn btn--ghost" href="{{ url_for('download_mac') }}" download>
             <span class="btn__label">Download for Mac</span>
             <span class="btn__meta" data-size-for=".app">.app &middot; macOS 12+</span>
           </a>
+          {% else %}
+          <span class="btn btn--ghost btn--off" aria-disabled="true">
+            <span class="btn__label">Download for Mac</span>
+            <span class="btn__meta">build in progress</span>
+          </span>
+          {% endif %}
         </div>
+
+        {% if mac_ready %}
+        <p class="pitch__fineprint">
+          Mac: unzip, then right&#8209;click <strong>Bonzi Buddy.app</strong> and choose
+          <strong>Open</strong>. He is ad&#8209;hoc signed rather than notarised, so
+          Gatekeeper asks you to say so once.
+          {% if mac_arm_ready %}
+          <a href="{{ url_for('download_mac_arch', arch='arm64') }}" download>Prefer the native Apple Silicon build?</a>
+          {% endif %}
+        </p>
+        {% endif %}
 
         <p class="pitch__note" id="status" role="status">He is already here.</p>
       </div>

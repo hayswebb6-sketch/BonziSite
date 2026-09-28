@@ -8,7 +8,17 @@ app=Flask(__name__)
 DOWNLOAD_DIR=os.path.join(app.root_path, "downloads")
 
 WINDOWS_ARTIFACT="bonzi_buddy_v2.zip"
-MAC_ARTIFACT="bonzi_buddy_mac.zip"
+
+# Mac is published as two builds, because a Mac is not one thing. The Intel
+# build is the default: Apple Silicon still runs it under Rosetta 2, so a
+# single link covers every machine, and the native arm64 one is there for
+# people who would rather not pay the translation.
+MAC_ARTIFACTS={
+    "x86_64": "bonzi_buddy_mac_x86_64.zip",
+    "arm64": "bonzi_buddy_mac_arm64.zip",
+}
+MAC_DEFAULT_ARCH="x86_64"
+
 VERSION_FILE=os.path.join(DOWNLOAD_DIR, "version.txt")
 
 _artifact_cache={}
@@ -24,6 +34,9 @@ def app_version():
         return text or None
     except OSError:
         return None
+
+def artifact_available(filename):
+    return os.path.isfile(os.path.join(DOWNLOAD_DIR, filename))
 
 def artifact_digest(filename):
     """sha256 + size for a build artifact, computed once and cached."""
@@ -50,32 +63,58 @@ def absolute_url(endpoint):
     # request.url_root keeps the manifest correct behind any host or proxy.
     return request.url_root.rstrip("/") + "/" + endpoint.lstrip("/")
 
+def not_ready(what):
+    # 503, not 404: nothing is wrong with the link, the build just has not
+    # landed yet, and it is worth retrying. A 404 read as "this will never
+    # exist", which is how the missing macOS artifact went unnoticed.
+    return (
+        f"<h1>{what} is not ready yet</h1>"
+        "<p>CI has not published this build to this branch yet. "
+        "<a href='/'>Return to Bonzi Buddy</a></p>",
+        503,
+    )
+
+def mac_endpoint(arch):
+    return "download-mac" if arch==MAC_DEFAULT_ARCH else f"download-mac/{arch}"
+
 @app.after_request
 def no_store_manifest(response):
     # An updater that reads a cached manifest will never notice a new build.
-    if request.path in ("/version.json", "/version-mac.json"):
+    if request.path=="/version.json" or request.path.startswith("/version-mac"):
         response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"]="no-cache"
     return response
 
 @app.route('/')
 def bonzi():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        windows_ready=artifact_available(WINDOWS_ARTIFACT),
+        mac_ready=any(artifact_available(name) for name in MAC_ARTIFACTS.values()),
+        mac_arm_ready=artifact_available(MAC_ARTIFACTS["arm64"]),
+    )
 
 @app.route('/download')
 def download():
-    return send_from_directory("downloads", WINDOWS_ARTIFACT, as_attachment=True)
+    if not artifact_available(WINDOWS_ARTIFACT):
+        return not_ready("The Windows build")
+    return send_from_directory(DOWNLOAD_DIR, WINDOWS_ARTIFACT, as_attachment=True)
+
+def _download_mac(arch):
+    if arch not in MAC_ARTIFACTS:
+        return "Unknown macOS architecture. Try /download-mac.", 404
+    filename=MAC_ARTIFACTS[arch]
+    if not artifact_available(filename):
+        return not_ready("The macOS build")
+    return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
 
 @app.route('/download-mac')
 def download_mac():
-    if not os.path.exists(os.path.join(DOWNLOAD_DIR, MAC_ARTIFACT)):
-        return (
-            "<h1>macOS build is not ready yet</h1>"
-            "<p>Check back once the build has run. "
-            "<a href='/'>Return to Bonzi Buddy</a></p>",
-            404,
-        )
-    return send_from_directory("downloads", MAC_ARTIFACT, as_attachment=True)
+    return _download_mac(MAC_DEFAULT_ARCH)
+
+@app.route('/download-mac/<arch>')
+def download_mac_arch(arch):
+    return _download_mac(arch)
 
 def _manifest(filename, endpoint):
     version=app_version()
@@ -98,7 +137,14 @@ def version_json():
 
 @app.route('/version-mac.json')
 def version_mac_json():
-    return _manifest(MAC_ARTIFACT, "download-mac")
+    # No arch in the path means the default build, same as /download-mac.
+    return _manifest(MAC_ARTIFACTS[MAC_DEFAULT_ARCH], mac_endpoint(MAC_DEFAULT_ARCH))
+
+@app.route('/version-mac/<arch>.json')
+def version_mac_arch_json(arch):
+    if arch not in MAC_ARTIFACTS:
+        return jsonify({"error": "unknown architecture"}), 404
+    return _manifest(MAC_ARTIFACTS[arch], mac_endpoint(arch))
 
 @app.route('/site.webmanifest')
 def webmanifest():

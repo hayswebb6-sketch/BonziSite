@@ -283,6 +283,41 @@ body {
 
 .btn--ghost:hover { background: rgb(255 255 255 / 0.05); }
 
+/* No build published for this platform yet. Not a link, so it cannot 404. */
+.btn--off {
+  color: var(--text-dim, #b9a8d6);
+  background: rgb(0 0 0 / 0.25);
+  border-style: dashed;
+  border-color: rgb(255 255 255 / 0.12);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.btn--off:hover,
+.btn--off:active {
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.pitch__fineprint {
+  margin: -0.35rem 0 0;
+  max-width: 30rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-dim, #b9a8d6);
+}
+
+.pitch__fineprint strong { color: #fff; }
+
+.pitch__fineprint a {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--ink-200);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ---------- pitch ---------- */
 
 .pitch {

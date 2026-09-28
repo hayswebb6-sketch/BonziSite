@@ -26,71 +26,114 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r BonziCode/requirements.txt
 
+      # bonzi.ico is committed, but a single 256px frame is what the committed
+      # one used to be, and Windows picks the 16px frame for the taskbar. This
+      # regenerates it with every size the shell actually asks for.
+      - name: Rebuild the icon
+        working-directory: BonziCode
+        run: python tools/make_icons.py
+
       - name: Build
         working-directory: BonziCode
         run: pyinstaller --clean --noconfirm bonzi_buddy_v2.spec
 
       - name: Package
+        working-directory: BonziCode
         shell: pwsh
         run: |
-          $out = "dist/bonzi_buddy_windows.zip"
-          Compress-Archive -Path dist/bonzi_buddy_v2.exe -DestinationPath $out
-          Get-FileHash -Algorithm SHA256 $out | Select-Object -ExpandProperty Hash
+          Compress-Archive -Path dist/bonzi_buddy_v2.exe -DestinationPath dist/bonzi_buddy_windows.zip
+          Get-FileHash -Algorithm SHA256 dist/bonzi_buddy_windows.zip | Select-Object -ExpandProperty Hash
 
       - uses: actions/upload-artifact@v4
         with:
           name: bonzi-windows
-          path: dist/bonzi_buddy_windows.zip
+          path: BonziCode/dist/bonzi_buddy_windows.zip
+          if-no-files-found: error
 
   macos:
-    name: macOS app
-    runs-on: macos-latest
-    # The macOS build has never been exercised. Keep a failure here from
-    # blocking the Windows publish, otherwise one broken runner means no
-    # artifact and no version stamp, and the site stays on 503 forever.
-    continue-on-error: true
+    name: macOS app (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    # Two builds, because there is no such thing as a Mac. The Intel one is the
+    # default everywhere, since Apple Silicon still runs it under Rosetta 2.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x86_64
+            runner: macos-13
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          architecture: ${{ matrix.arch }}
 
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
           pip3 install -r BonziCode/requirements.txt
 
+      # iconutil only exists on macOS, so this is the one icon step that has to
+      # happen here rather than in make_icons.py. Without it the Dock shows a
+      # generic icon instead of Bonzi.
+      - name: Build the Dock icon
+        working-directory: BonziCode
+        run: |
+          python3 tools/make_icons.py --skip-ico --iconset build/BonziBuddy.iconset
+          iconutil -c icns build/BonziBuddy.iconset -o bonzi.icns
+          test -s bonzi.icns
+
       - name: Build
         working-directory: BonziCode
-        run: |
-          pyinstaller --clean --noconfirm \
-            --name "Bonzi Buddy" \
-            --windowed \
-            --icon bonzi.ico \
-            --add-data "Designer.png:." \
-            --add-data "Designer_half.png:." \
-            --add-data "Designer_blink.png:." \
-            --add-data "bonzi.png:." \
-            bonzi_buddy_v2.py
+        run: pyinstaller --clean --noconfirm bonzi_buddy_mac.spec
 
+      # A wrong-arch bundle is the one macOS failure that looks fine in CI and
+      # breaks on a user's machine, so check the slice before packaging.
+      - name: Verify the bundle
+        working-directory: BonziCode
+        run: |
+          BIN="dist/Bonzi Buddy.app/Contents/MacOS/Bonzi Buddy"
+          test -x "$BIN"
+          lipo -archs "$BIN"
+          test -d "dist/Bonzi Buddy.app/Contents/Frameworks"
+          test -d "dist/Bonzi Buddy.app/Contents/Resources/frames"
+
+      # An unsigned .app is quarantined on first launch, so an ad-hoc signature
+      # is applied to at least make the bundle self-consistent. The site tells
+      # people to right-click -> Open, which is what clears Gatekeeper without a
+      # paid Developer ID.
+      #
+      # ditto rather than zip: the bundle contains symlinks and an executable
+      # bit, and zip without -y flattens both, which breaks the signature.
       - name: Ad-hoc sign and package
         working-directory: BonziCode
-        # Unsigned .app bundles are quarantined on first launch, so we apply a
-        # local ad-hoc signature to at least make the bundle self-consistent.
         run: |
-          codesign --force --deep --sign - "dist/Bonzi Buddy.app" || true
-          cd dist
-          zip -qry "../bonzi_buddy_mac.zip" "Bonzi Buddy.app"
+          codesign --force --deep --sign - "dist/Bonzi Buddy.app"
+          codesign --verify --deep --strict "dist/Bonzi Buddy.app"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Bonzi Buddy.app" "dist/bonzi_buddy_mac_${{ matrix.arch }}.zip"
+          ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:
-          name: bonzi-macos
-          path: BonziCode/dist/bonzi_buddy_mac.zip
+          name: bonzi-macos-${{ matrix.arch }}
+          path: BonziCode/dist/bonzi_buddy_mac_${{ matrix.arch }}.zip
+          # The old macOS step wrote the zip to BonziCode/ while this path
+          # pointed at BonziCode/dist/, so upload-artifact matched nothing,
+          # exited quietly, and publish shipped Windows only. /download-mac was
+          # a 404 from then on. An empty artifact is never acceptable here.
+          if-no-files-found: error
 
   publish:
     name: Publish artifacts + manifest
     needs: [windows, macos]
+    # A macOS failure must not block the Windows publish, or one broken runner
+    # means no artifact and no version stamp and the site sits on 503 forever.
+    # macOS is not continue-on-error any more though: it now runs as a visible
+    # matrix, so a real breakage should be red on the run page.
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -109,11 +152,16 @@ jobs:
             exit 1
           fi
           cp artifacts/bonzi-windows/bonzi_buddy_windows.zip downloads/bonzi_buddy_v2.zip
-          if [ -f artifacts/bonzi-macos/bonzi_buddy_mac.zip ]; then
-            cp artifacts/bonzi-macos/bonzi_buddy_mac.zip downloads/bonzi_buddy_mac.zip
-            echo "macOS artifact included"
+          cp artifacts/bonzi-macos-x86_64/bonzi_buddy_mac_x86_64.zip \
+             downloads/bonzi_buddy_mac_x86_64.zip
+          if [ -f artifacts/bonzi-macos-arm64/bonzi_buddy_mac_arm64.zip ]; then
+            cp artifacts/bonzi-macos-arm64/bonzi_buddy_mac_arm64.zip \
+               downloads/bonzi_buddy_mac_arm64.zip
+            echo "macOS: Intel + Apple Silicon"
           else
-            echo "::warning::macOS build unavailable, publishing Windows only"
+            # The Intel build runs on Apple Silicon under Rosetta 2, so this is
+            # a partial macOS release rather than no macOS release.
+            echo "::warning::macOS arm64 build unavailable, publishing Intel only"
           fi
           ls -l downloads
 

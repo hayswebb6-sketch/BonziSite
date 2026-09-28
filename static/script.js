@@ -231,7 +231,8 @@
   /* ---------- live build info ---------- */
 
   const versionEl = document.getElementById("version");
-  const sizeMetas = document.querySelectorAll(".btn__meta[data-size-for]");
+  const windowsMeta = document.querySelector('.btn__meta[data-size-for=".exe"]');
+  const macMeta = document.querySelector('.btn__meta[data-size-for=".app"]');
 
   function formatSize(bytes) {
     if (!bytes || bytes < 1) {
@@ -241,31 +242,34 @@
     return mb >= 10 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
   }
 
-  function applyManifest(manifest) {
+  function applyManifest(manifest, meta) {
     if (versionEl && manifest && manifest.version) {
       versionEl.textContent = `v${manifest.version}`;
     }
-    if (sizeMetas.length && manifest && manifest.size) {
+    if (meta && manifest && manifest.size) {
       const text = formatSize(manifest.size);
       if (text) {
-        sizeMetas.forEach((el) => {
-          el.textContent = `${el.dataset.sizeFor} · ${text}`;
-        });
+        meta.textContent = `${meta.dataset.sizeFor} · ${text}`;
       }
     }
   }
 
-  function loadManifest() {
-    fetch("/version.json", { cache: "no-store" })
+  function loadManifest(url, meta) {
+    fetch(url, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
-      .then(applyManifest)
+      .then((manifest) => applyManifest(manifest, meta))
       .catch(() => {
         /* the static markup is already correct, so this is safe to ignore */
       });
   }
 
-  if (versionEl || sizeMetas.length) {
-    loadManifest();
+  // Windows and macOS are separate zips of different sizes, so each button
+  // takes its number from its own manifest rather than both from /version.json.
+  if (windowsMeta) {
+    loadManifest("/version.json", windowsMeta);
+  }
+  if (macMeta) {
+    loadManifest("/version-mac.json", macMeta);
   }
 
   /* ---------- taskbar clock ---------- */
