@@ -6,6 +6,23 @@
 <title>Bonzi Buddy</title>
 <meta name="description" content="The greatest digital friend ever created.">
 <meta name="theme-color" content="#1c1029">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="{{ canonical }}">
+{# Link previews. Without these a shared link is a bare URL with no picture. #}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Bonzi Buddy">
+<meta property="og:title" content="Bonzi Buddy">
+<meta property="og:description" content="The greatest digital friend ever created. Free for Windows and macOS.">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ share_image }}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="{{ share_image_width }}">
+<meta property="og:image:height" content="{{ share_image_height }}">
+<meta property="og:image:alt" content="Bonzi Buddy, the purple digital friend.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Bonzi Buddy">
+<meta name="twitter:description" content="The greatest digital friend ever created. Free for Windows and macOS.">
+<meta name="twitter:image" content="{{ share_image }}">
 <link rel="icon" href="{{ url_for('static', filename='favicon-32.png') }}" sizes="32x32" type="image/png">
 <link rel="icon" href="{{ url_for('static', filename='favicon-16.png') }}" sizes="16x16" type="image/png">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
@@ -126,5 +143,8 @@
 </div>
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+{# tojson escapes <, > and &, so this is safe inside a script element. #}
+<script type="application/ld+json">{{ structured | tojson }}</script>
 </body>
 </html>

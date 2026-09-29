@@ -2,7 +2,7 @@ import hashlib
 import os
 import zipfile
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_from_directory, url_for
 
 app=Flask(__name__)
 
@@ -108,6 +108,53 @@ def not_ready(what):
 def mac_endpoint(arch):
     return "download-mac" if arch==MAC_DEFAULT_ARCH else f"download-mac/{arch}"
 
+# The share card is a fixed 1200x630 so link previews are large and cropped
+# the same way everywhere. Regenerate with tools if the artwork changes.
+SHARE_IMAGE="og.png"
+SHARE_IMAGE_WIDTH=1200
+SHARE_IMAGE_HEIGHT=630
+
+def share_image_url():
+    return absolute_url(url_for("static", filename=SHARE_IMAGE))
+
+def structured_data(version):
+    """schema.org SoftwareApplication, so a search result can offer the download.
+
+    version is the one read out of the published zip, so this cannot advertise
+    a release that is not actually downloadable.
+    """
+    data={
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Bonzi Buddy",
+        "description": "The greatest digital friend ever created.",
+        "applicationCategory": "EntertainmentApplication",
+        "operatingSystem": "Windows, macOS",
+        "downloadUrl": absolute_url("download"),
+        "image": share_image_url(),
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    }
+    if version:
+        data["softwareVersion"]=version
+    return data
+
+@app.after_request
+def security_headers(response):
+    # Nothing here is framed, embedded or fetched cross-origin, and the page has
+    # no inline script or style, so the strictest useful policy costs nothing.
+    # script-src 'self' is what actually matters: it neutralises any injected
+    # inline script even if a template change ever lets one in.
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+        "script-src 'self'; object-src 'none'; base-uri 'self'; "
+        "form-action 'self'; frame-ancestors 'none'",
+    )
+    return response
+
 @app.after_request
 def no_store_manifest(response):
     # An updater that reads a cached manifest will never notice a new build.
@@ -118,14 +165,22 @@ def no_store_manifest(response):
 
 @app.route('/')
 def bonzi():
+    # Read from the published artifact rather than hardcoded, so the page and
+    # the share metadata cannot claim a version the download does not have.
+    published_version=artifact_version(WINDOWS_ARTIFACT)
     return render_template(
         "index.html",
         windows_ready=artifact_available(WINDOWS_ARTIFACT),
         mac_ready=any(artifact_available(name) for name in MAC_ARTIFACTS.values()),
         mac_arm_ready=artifact_available(MAC_ARTIFACTS["arm64"]),
-        # Read from the published artifact rather than hardcoded, so the page
-        # cannot claim a version the download does not actually have.
-        version=artifact_version(WINDOWS_ARTIFACT) or "unpublished",
+        version=published_version or "unpublished",
+        # Built from the forwarded headers, so these are https behind Render's
+        # proxy even though request.url_root can report http.
+        canonical=absolute_url(""),
+        share_image=share_image_url(),
+        share_image_width=SHARE_IMAGE_WIDTH,
+        share_image_height=SHARE_IMAGE_HEIGHT,
+        structured=structured_data(published_version),
     )
 
 @app.route('/download')
@@ -197,8 +252,11 @@ def webmanifest():
         "display": "standalone",
         "background_color": "#1c1029",
         "theme_color": "#1c1029",
+        # icon-192, not favicon-192: this pointed at a file that was never
+        # there, so "install to home screen" fetched a 404 and fell back to a
+        # generic glyph. The 192 file exists under the icon- name.
         "icons": [
-            {"src": "/static/favicon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
         ],
     })
