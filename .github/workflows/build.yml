@@ -150,9 +150,11 @@ jobs:
       # fails the build if it dies, never reaches main(), or cannot load its
       # frames. Without it a broken mac download is only discovered by whoever
       # clicks the button, which is the worst possible place to find out.
-      - name: Smoke test the bundle
-        working-directory: BonziCode
-        run: bash tools/smoke_test.sh
+      #
+      # Deliberately after the signing step below, not before it: what ships is
+      # the signed bundle, and a signature that satisfies `codesign --verify`
+      # can still stop the app loading. Testing the bundle before it is signed
+      # would leave that class of failure completely uncovered.
 
       # An unsigned .app is quarantined on first launch, so an ad-hoc signature
       # is applied to at least make the bundle self-consistent. The site tells
@@ -187,6 +189,14 @@ jobs:
           zip -j -q "dist/bonzi_buddy_mac_${{ matrix.arch }}.zip" build/version.txt
           echo "packaged macOS ${{ matrix.arch }} $VERSION"
           ls -l dist
+
+      # Last, so it tests the signed bundle that actually ships, and so the zip
+      # is already made and cannot be disturbed by anything the app does at
+      # startup. The packaging step above is a second or two, so there is
+      # nothing to gain by checking this first.
+      - name: Smoke test the bundle
+        working-directory: BonziCode
+        run: bash tools/smoke_test.sh
 
       - uses: actions/upload-artifact@v4
         with:

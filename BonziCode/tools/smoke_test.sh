@@ -21,8 +21,18 @@
 # Liveness alone proves nothing - the app refuses to close, and PyInstaller is
 # built with disable_windowed_traceback=False, so a crash can raise a traceback
 # dialog and sit there looking perfectly healthy.
+#
+# What this does NOT catch: a window that opens and renders blank for some
+# reason other than a missing frame file. Deciding that needs a screenshot, and
+# screencapture needs Screen Recording permission, which a fresh runner does
+# not have, so gating on it would make the build flaky. Absence of frame-load
+# errors in the log is the available proxy, and it covers the case that
+# actually happens - artwork missing out of the bundle.
 
-set -uo pipefail
+# No -e: every failure below is an explicit bad/raise with a message, and -e
+# would abort on the first non-zero command without saying which check failed.
+# pipefail is omitted for the same reason; without -e it does nothing.
+set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -51,10 +61,18 @@ rm -rf "$LOG_DIR" "$PLIST"
 
 say "launching (waiting ${WAIT}s)"
 open "$BUNDLE"
-sleep 2
 
-PID=$(pgrep -f "$BIN" | head -1)
-[ -n "$PID" ] || bad "the app never started, no process matching ${BIN}"
+# Polled rather than slept on. PyInstaller unpacks the whole bundle before any
+# of the app's own code runs, and on a loaded runner that can take longer than
+# any fixed guess, so a single check after a fixed pause turns a slow start
+# into a spurious "the app never started".
+PID=""
+for _ in $(seq 1 20); do
+  PID=$(pgrep -f "$BIN" | head -1)
+  [ -n "$PID" ] && break
+  sleep 1
+done
+[ -n "$PID" ] || bad "the app never appeared in the process table, no match for ${BIN}"
 echo "pid     ${PID}"
 
 sleep "$WAIT"
