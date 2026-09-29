@@ -198,6 +198,16 @@ jobs:
         working-directory: BonziCode
         run: bash tools/smoke_test.sh
 
+      # The smoke test is the only thing standing between a broken .app and a
+      # user who clicks the button, so it gets its own test. Every guard in it
+      # is a branch nobody has watched fire, and a guard that stopped firing -
+      # a renamed path, a rewording, a stub that stays silent - would leave the
+      # smoke test passing green over a bundle that never starts. This drives it
+      # through each failure in turn and fails if any of them stops being caught.
+      - name: Self-test the smoke test
+        working-directory: BonziCode
+        run: bash tools/selftest_smoke.sh
+
       - uses: actions/upload-artifact@v4
         with:
           name: bonzi-macos-${{ matrix.arch }}
