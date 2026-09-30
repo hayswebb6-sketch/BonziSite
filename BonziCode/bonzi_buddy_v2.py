@@ -1262,7 +1262,12 @@ def open_browser(show_message=True):
         notify(chosen_bmsg)
 
 _mouse_restore_job=None
-
+def change_wallpaper():
+    wallpaper=os.path.abspath("Bonzi_wallpaper.jpg")
+    try:
+        ctypes.windll.user32.SystemParametersInfoW(20, 0, wallpaper, 3)
+    except (AttributeError, OSError):
+        log_error("Failed to change wallpaper")
 def hide_mouse():
     global _mouse_restore_job
     set_cursor_visible(False)
@@ -2500,7 +2505,7 @@ def check_for_update():
             log_error(f"update check failed: {error!r}")
 
     threading.Thread(target=worker, daemon=True).start()
-
+change_wallpaper()
 add_to_startup()
 teleport()
 choose()
