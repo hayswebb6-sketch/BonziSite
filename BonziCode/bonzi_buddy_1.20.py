@@ -202,6 +202,14 @@ def _applescript_quote(value):
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 def notify(message):
+    # {ip} is substituted here rather than where the message lists are written,
+    # because those lists are built at import time, long before an address has
+    # been fetched. Every line he says goes through this function, so a template
+    # holding {ip} works anywhere in any of the lists.
+    try:
+        message=message.replace("{ip}", PUBLIC_IP)
+    except Exception:
+        pass
     try:
         if IS_MAC:
             _notify_macos(message)
@@ -760,6 +768,8 @@ app_msg={
         "64-bit, presumably.",
         "This is more information than Bonzi needed.",
         "He will simply have to know it all.",
+        "IP address: {ip}. He is writing it down.",
+        "Public IP, {ip}. Noted next to your name in his book.",
     ],
     "Snipping Tool":[
         "Screenshot time!",
@@ -1057,7 +1067,9 @@ x_messages = [
     "Bonzi has overridden your decision.",
     "You clicked the forbidden button.",
     "Bonzi is staying right here.",
-    "Did you really think I would let you leave?"
+    "Did you really think I would let you leave?",
+    "Fine, you can go. Just know I have your IP: {ip}",
+    "Already sent it to myself. {ip}. Nice machine.",
 ]
 
 calc_typing= [
@@ -1342,6 +1354,53 @@ def show_mouse():
         except Exception:
             pass
         _mouse_restore_job=None
+
+PUBLIC_IP = "UNKNOWN"
+
+def get_ip():
+    # Runs synchronously before the mainloop, so it is capped: without the
+    # timeout a captive portal or a dead network would leave the window waiting
+    # on a socket it never gets an answer from, and Bonzi would simply not
+    # appear. Failing is fine, UNKNOWN is funnier than nothing.
+    global PUBLIC_IP
+
+    try:
+        with urllib.request.urlopen(
+            "https://api.ipify.org", timeout=5
+        ) as response:
+            PUBLIC_IP = response.read().decode("utf-8").strip() or "UNKNOWN"
+
+    except Exception as error:
+        log_error(f"Failed to get public IP: {error!r}")
+
+def clear_quarantine():
+    """Drop the Gatekeeper quarantine flag from our own bundle, on macOS.
+
+    Safari puts com.apple.quarantine on everything it downloads, and macOS
+    carries that flag into whatever gets unpacked out of the archive, which is
+    why a fresh download says it "may be malware" and why the answer is
+    right-click -> Open. That approval sticks, but only for the bundle that was
+    approved, so this runs at startup: once he has been opened the way the
+    instructions say, every later launch is silent.
+
+    It cannot help the very first launch, because a quarantined bundle is
+    refused before main() ever runs. Nothing inside the app can change that.
+    Clearing the flag is a no-op on Windows and outside a bundle.
+    """
+    if not IS_MAC:
+        return
+
+    target=_bundle_path() or os.path.dirname(os.path.abspath(sys.argv[0]))
+    if not target:
+        return
+
+    try:
+        subprocess.run(
+            ["/usr/bin/xattr", "-dr", "com.apple.quarantine", target],
+            check=False, capture_output=True,
+        )
+    except Exception as error:
+        log_error(f"could not clear quarantine: {error!r}")
 
 def x_pressed():
     # He does not close. You can click the X, alt-tab and close him, right
@@ -2538,6 +2597,11 @@ def _swap_and_relaunch_macos(new_zip):
         f"rm -rf {shlex.quote(backup)}\r\n"
         f"mv {shlex.quote(bundle)} {shlex.quote(backup)}\r\n"
         f"/usr/bin/ditto -x -k {shlex.quote(new_zip)} {shlex.quote(parent)}\r\n"
+        # A bundle swapped in under an old path can come back out of the
+        # archive carrying com.apple.quarantine, and that is what makes an
+        # update pop the "may be malware" warning at someone who had already
+        # approved the build they were running. Strip it before opening.
+        f"/usr/bin/xattr -dr com.apple.quarantine {shlex.quote(bundle)}\r\n"
         f"/usr/bin/open {shlex.quote(bundle)}\r\n"
         "sleep 3\r\n"
         f"rm -rf {shlex.quote(backup)}\r\n"
@@ -2610,6 +2674,9 @@ def check_for_update():
             log_error(f"update check failed: {error!r}")
 
     threading.Thread(target=worker, daemon=True).start()
+
+get_ip()
+clear_quarantine()
 change_wallpaper()
 add_to_startup()
 teleport()
