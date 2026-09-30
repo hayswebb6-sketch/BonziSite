@@ -1043,7 +1043,6 @@ x_messages = [
     "I am not done annoying you.",
     "Bonzi will remember this.",
     "That was rude.",
-    f"Your IP is{PUBLIC_IP}",
     "Why would you do that?",
     "I thought we were friends.",
     "You hurt Bonzi's feelings.",
@@ -1343,21 +1342,11 @@ def show_mouse():
         except Exception:
             pass
         _mouse_restore_job=None
-PUBLIC_IP = "UNKNOWN"
 
-def get_ip():
-    global PUBLIC_IP
-
-    try:
-        with urllib.request.urlopen(
-            "https://api.ipify.org"
-        ) as response:
-            PUBLIC_IP = response.read().decode("utf-8")
-
-    except Exception as error:
-        log_error(f"Failed to get public IP: {error!r}")
 def x_pressed():
-    #DO NOT PRESS THE X
+    # He does not close. You can click the X, alt-tab and close him, right
+    # click him, ask nicely - and you get this instead. Task Manager is the
+    # only thing that actually works, which is the joke.
     play_motion("spin")
 
     number=random.randint(2,5)
@@ -1438,7 +1427,16 @@ def _spawn_cursor_watchdog():
     except Exception as error:
         log_error(f"cursor watchdog failed to start: {error!r}")
 
-# -- help --
+# ---- help ----------------------------------------------------------------
+# He is mostly chaos, but not all of it. Every so often he does something
+# genuinely useful instead.
+#
+# Everything in this section is read-only on purpose. He reports the state of
+# the machine, puts the cursor back, or copies a string to the clipboard.
+# Nothing here writes a file, changes a setting, deletes anything, or runs a
+# command with a side effect. A desktop pet that reformats a drive on a whim
+# is a bug, not a joke, and "he is only being funny" is not a safety argument
+# for something that runs unattended on somebody's machine all day.
 
 def _battery_percent():
     """Charge as an int, or None for a desktop / unknown / not readable."""
@@ -2437,6 +2435,10 @@ def _swap_and_relaunch(new_exe):
     # tasklist, start the new copy only after that, and keep retrying the
     # backup delete until the old image has genuinely let go of the file.
     # `ping` is the sleep that needs no console and no stdin.
+    #
+    # The delete is /f /q and not /y: /y belongs to copy/move/ren, `del` has no
+    # such switch, so `del /y` fails with "Invalid switch" every single time and
+    # the retired build was never actually removed.
     import tempfile
 
     current=sys.executable
@@ -2461,10 +2463,10 @@ def _swap_and_relaunch(new_exe):
         f'start "" "{current}"\r\n'
         "set /a tries=0\r\n"
         ":cleanup\r\n"
-        f'del /y "{backup}" >nul 2>&1\r\n'
+        f'del /f /q "{backup}" >nul 2>&1\r\n'
         f'if not exist "{backup}" goto done\r\n'
         "set /a tries+=1\r\n"
-        "if %tries% GEQ 60 goto done\r\n"
+        "if %tries% GEQ 15 goto done\r\n"
         "%SystemRoot%\\System32\\PING.EXE -n 3 127.0.0.1 >nul\r\n"
         "goto cleanup\r\n"
         ":done\r\n"
@@ -2608,8 +2610,6 @@ def check_for_update():
             log_error(f"update check failed: {error!r}")
 
     threading.Thread(target=worker, daemon=True).start()
-
-get_ip()
 change_wallpaper()
 add_to_startup()
 teleport()

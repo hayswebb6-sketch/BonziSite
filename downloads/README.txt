@@ -5,7 +5,7 @@ Normally you do not need to build anything by hand. Pushing to main runs
 .github/workflows/build.yml, which builds every platform and commits the
 artifacts into downloads/. The site then serves them:
 
-    downloads/bonzi_buddy_v2.zip           ->  /download
+    downloads/bonzi_buddy_1.20.zip           ->  /download
     downloads/bonzi_buddy_mac_x86_64.zip   ->  /download-mac
     downloads/bonzi_buddy_mac_arm64.zip    ->  /download-mac/arm64
 
@@ -36,9 +36,9 @@ From BonziCode/ on Windows:
 
     pip install -r requirements.txt
     python tools/make_icons.py
-    pyinstaller --clean --noconfirm bonzi_buddy_v2.spec
+    pyinstaller --clean --noconfirm bonzi_buddy_1.20.spec
 
-That produces dist/bonzi_buddy_v2.exe. requirements.txt uses environment
+That produces dist/bonzi_buddy_1.20.exe. requirements.txt uses environment
 markers, so pywin32 / winotify / pygetwindow are only installed on Windows and
 the same file works on a macOS runner.
 
@@ -109,7 +109,7 @@ battery readout uses pmset and needs none of these.
 Turning on self-update
 ----------------------
 
-In bonzi_buddy_v2.py:
+In bonzi_buddy_1.20.py:
 
     UPDATE_MANIFEST_URL="https://<your-site-host>/version.json"
 

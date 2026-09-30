@@ -15,6 +15,10 @@ pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
 
 pillow>=10
 
-# Build-time only: produces dist/bonzi_buddy_v2.exe on Windows and
+# Outbound HTTP. Nothing imports it yet, the updater is still on urllib from the
+# stdlib, so this is here for the code that is about to need it.
+requests>=2.32,<3
+
+# Build-time only: produces dist/bonzi_buddy_1.20.exe on Windows and
 # dist/Bonzi Buddy.app on macOS.
 pyinstaller>=6.22,<7

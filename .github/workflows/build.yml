@@ -50,7 +50,7 @@ jobs:
 
       - name: Build
         working-directory: BonziCode
-        run: pyinstaller --clean --noconfirm bonzi_buddy_v2.spec
+        run: pyinstaller --clean --noconfirm bonzi_buddy_1.20.spec
 
       # version.txt goes *inside* the zip. The site reads the version out of
       # the artifact it is about to hand out, so the number and the binary
@@ -60,11 +60,11 @@ jobs:
         working-directory: BonziCode
         shell: pwsh
         run: |
-          $match = Select-String -Path bonzi_buddy_v2.py -Pattern 'APP_VERSION="([^"]+)"' | Select-Object -First 1
-          if (-not $match) { throw "could not read APP_VERSION from bonzi_buddy_v2.py" }
+          $match = Select-String -Path bonzi_buddy_1.20.py -Pattern 'APP_VERSION="([^"]+)"' | Select-Object -First 1
+          if (-not $match) { throw "could not read APP_VERSION from bonzi_buddy_1.20.py" }
           $version = $match.Matches[0].Groups[1].Value
           Set-Content -Path dist/version.txt -Value $version -NoNewline
-          Compress-Archive -Path dist/bonzi_buddy_v2.exe, dist/version.txt `
+          Compress-Archive -Path dist/bonzi_buddy_1.20.exe, dist/version.txt `
                            -DestinationPath dist/bonzi_buddy_windows.zip
           Write-Output "packaged $version"
           Get-FileHash -Algorithm SHA256 dist/bonzi_buddy_windows.zip | Select-Object -ExpandProperty Hash
@@ -179,9 +179,9 @@ jobs:
           # with "invalid option -- P", and because the mac shell is bash -e the
           # job died there and threw away an .app that had already built and
           # signed successfully. sed -n works identically on BSD and GNU.
-          VERSION=$(sed -n 's/^APP_VERSION="\([^"]*\)".*/\1/p' bonzi_buddy_v2.py | head -1)
+          VERSION=$(sed -n 's/^APP_VERSION="\([^"]*\)".*/\1/p' bonzi_buddy_1.20.py | head -1)
           if [ -z "$VERSION" ]; then
-            echo "could not read APP_VERSION from bonzi_buddy_v2.py" >&2
+            echo "could not read APP_VERSION from bonzi_buddy_1.20.py" >&2
             exit 1
           fi
           mkdir -p build
@@ -242,7 +242,7 @@ jobs:
             echo "::error::no Windows artifact was produced, refusing to publish"
             exit 1
           fi
-          cp artifacts/bonzi-windows/bonzi_buddy_windows.zip downloads/bonzi_buddy_v2.zip
+          cp artifacts/bonzi-windows/bonzi_buddy_windows.zip downloads/bonzi_buddy_1.20.zip
           # Both mac slices are optional. The Intel build runs on Apple Silicon
           # under Rosetta 2, so a missing arch is a partial release rather than
           # a failed one. This guard is what actually makes the job-level

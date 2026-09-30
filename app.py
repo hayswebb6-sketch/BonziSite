@@ -1,64 +1,25 @@
 import hashlib
 import os
-import zipfile
 
-from flask import Flask, jsonify, render_template, request, send_from_directory, url_for
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 app=Flask(__name__)
 
 DOWNLOAD_DIR=os.path.join(app.root_path, "downloads")
 
 WINDOWS_ARTIFACT="bonzi_buddy_v2.zip"
-
-# Mac is published as two builds, because a Mac is not one thing. The Intel
-# build is the default: Apple Silicon still runs it under Rosetta 2, so a
-# single link covers every machine, and the native arm64 one is there for
-# people who would rather not pay the translation.
-MAC_ARTIFACTS={
-    "x86_64": "bonzi_buddy_mac_x86_64.zip",
-    "arm64": "bonzi_buddy_mac_arm64.zip",
-}
-MAC_DEFAULT_ARCH="x86_64"
-
-# The version is stored *inside* each artifact, not beside it. An earlier
-# design read downloads/version.txt, which only CI ever wrote, so one dead
-# publish job meant every manifest 503'd and self-update silently did nothing
-# forever. Putting the stamp in the zip makes the number and the binary the
-# same file: it is impossible to advertise a version that does not match the
-# build, and the manifest works with or without CI.
-VERSION_MEMBER="version.txt"
+MAC_ARTIFACT="bonzi_buddy_mac.zip"
+VERSION_FILE=os.path.join(DOWNLOAD_DIR, "version.txt")
 
 _artifact_cache={}
-_version_cache={}
 
-def artifact_version(filename):
-    """Read the version stamp from inside the artifact zip.
-
-    Returns None when the artifact carries no stamp, which means "do not
-    advertise this build". Guessing from the source tree instead would let a
-    fresh APP_VERSION sit next to a stale binary, so an older install would
-    download an older build and stamp itself backwards into a loop.
-    """
-    if filename in _version_cache:
-        return _version_cache[filename]
-
-    path=os.path.join(DOWNLOAD_DIR, filename)
-    version=None
+def app_version():
     try:
-        with zipfile.ZipFile(path) as archive:
-            for name in archive.namelist():
-                if os.path.basename(name)!=VERSION_MEMBER:
-                    continue
-                version=archive.read(name).decode("utf-8", "replace").strip() or None
-                break
-    except (OSError, zipfile.BadZipFile, KeyError):
-        version=None
-
-    _version_cache[filename]=version
-    return version
-
-def artifact_available(filename):
-    return os.path.isfile(os.path.join(DOWNLOAD_DIR, filename))
+        with open(VERSION_FILE, encoding="utf-8") as handle:
+            text=handle.read().strip()
+        return text or None
+    except OSError:
+        return None
 
 def artifact_digest(filename):
     """sha256 + size for a build artifact, computed once and cached."""
@@ -82,144 +43,44 @@ def artifact_digest(filename):
     return result
 
 def absolute_url(endpoint):
-    # The manifest URL has to come back as https, because the app refuses to
-    # update over plain http. Render terminates TLS and forwards with
-    # X-Forwarded-Proto, but nothing here applies ProxyFix, so request.url_root
-    # can report http even though the browser is on https. Trusting url_root
-    # alone therefore disables self-update in production while every local test
-    # passes, so the forwarded headers are read directly.
-    proto=(request.headers.get("X-Forwarded-Proto") or request.scheme).split(",")[0].strip()
-    host=(request.headers.get("X-Forwarded-Host") or request.host).split(",")[0].strip()
-    if proto not in ("http", "https"):
-        proto="https"
-    return f"{proto}://{host}".rstrip("/") + "/" + endpoint.lstrip("/")
-
-def not_ready(what):
-    # 503, not 404: nothing is wrong with the link, the build just has not
-    # landed yet, and it is worth retrying. A 404 read as "this will never
-    # exist", which is how the missing macOS artifact went unnoticed.
-    return (
-        f"<h1>{what} is not ready yet</h1>"
-        "<p>No stamped build of this kind has been published yet. "
-        "<a href='/'>Return to Bonzi Buddy</a></p>",
-        503,
-    )
-
-def mac_endpoint(arch):
-    return "download-mac" if arch==MAC_DEFAULT_ARCH else f"download-mac/{arch}"
-
-# The share card is a fixed 1200x630 so link previews are large and cropped
-# the same way everywhere. Regenerate with tools if the artwork changes.
-SHARE_IMAGE="og.png"
-SHARE_IMAGE_WIDTH=1200
-SHARE_IMAGE_HEIGHT=630
-
-def share_image_url():
-    return absolute_url(url_for("static", filename=SHARE_IMAGE))
-
-def structured_data(version):
-    """schema.org SoftwareApplication, so a search result can offer the download.
-
-    version is the one read out of the published zip, so this cannot advertise
-    a release that is not actually downloadable.
-    """
-    data={
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Bonzi Buddy",
-        "description": "The greatest digital friend ever created.",
-        "applicationCategory": "EntertainmentApplication",
-        "operatingSystem": "Windows, macOS",
-        "downloadUrl": absolute_url("download"),
-        "image": share_image_url(),
-        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
-    }
-    if version:
-        data["softwareVersion"]=version
-    return data
-
-@app.after_request
-def security_headers(response):
-    # Nothing here is framed, embedded or fetched cross-origin, and the page has
-    # no inline script or style, so the strictest useful policy costs nothing.
-    # script-src 'self' is what actually matters: it neutralises any injected
-    # inline script even if a template change ever lets one in.
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault(
-        "Content-Security-Policy",
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-        "script-src 'self'; object-src 'none'; base-uri 'self'; "
-        "form-action 'self'; frame-ancestors 'none'",
-    )
-    return response
+    # request.url_root keeps the manifest correct behind any host or proxy.
+    return request.url_root.rstrip("/") + "/" + endpoint.lstrip("/")
 
 @app.after_request
 def no_store_manifest(response):
     # An updater that reads a cached manifest will never notice a new build.
-    if request.path=="/version.json" or request.path.startswith("/version-mac"):
+    if request.path in ("/version.json", "/version-mac.json"):
         response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"]="no-cache"
     return response
 
 @app.route('/')
 def bonzi():
-    # Read from the published artifact rather than hardcoded, so the page and
-    # the share metadata cannot claim a version the download does not have.
-    published_version=artifact_version(WINDOWS_ARTIFACT)
-    return render_template(
-        "index.html",
-        windows_ready=artifact_available(WINDOWS_ARTIFACT),
-        mac_ready=any(artifact_available(name) for name in MAC_ARTIFACTS.values()),
-        mac_arm_ready=artifact_available(MAC_ARTIFACTS["arm64"]),
-        version=published_version or "unpublished",
-        # Built from the forwarded headers, so these are https behind Render's
-        # proxy even though request.url_root can report http.
-        canonical=absolute_url(""),
-        share_image=share_image_url(),
-        share_image_width=SHARE_IMAGE_WIDTH,
-        share_image_height=SHARE_IMAGE_HEIGHT,
-        structured=structured_data(published_version),
-    )
+    return render_template("index.html")
 
 @app.route('/download')
 def download():
-    if not artifact_available(WINDOWS_ARTIFACT):
-        return not_ready("The Windows build")
-    return send_from_directory(DOWNLOAD_DIR, WINDOWS_ARTIFACT, as_attachment=True)
-
-def _download_mac(arch):
-    if arch not in MAC_ARTIFACTS:
-        return "Unknown macOS architecture. Try /download-mac.", 404
-    filename=MAC_ARTIFACTS[arch]
-    if not artifact_available(filename):
-        return not_ready("The macOS build")
-    return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
+    return send_from_directory("downloads", WINDOWS_ARTIFACT, as_attachment=True)
 
 @app.route('/download-mac')
 def download_mac():
-    return _download_mac(MAC_DEFAULT_ARCH)
-
-@app.route('/download-mac/<arch>')
-def download_mac_arch(arch):
-    return _download_mac(arch)
+    if not os.path.exists(os.path.join(DOWNLOAD_DIR, MAC_ARTIFACT)):
+        return (
+            "<h1>macOS build is not ready yet</h1>"
+            "<p>Check back once the build has run. "
+            "<a href='/'>Return to Bonzi Buddy</a></p>",
+            404,
+        )
+    return send_from_directory("downloads", MAC_ARTIFACT, as_attachment=True)
 
 def _manifest(filename, endpoint):
+    version=app_version()
+    if version is None:
+        return jsonify({"error": "no release published yet"}), 503
+
     info=artifact_digest(filename)
     if info is None:
         return jsonify({"error": "no build available"}), 503
-
-    version=artifact_version(filename)
-    if version is None:
-        # The artifact is real but carries no version stamp, so there is no
-        # honest way to answer "is this newer?". Saying so beats inventing a
-        # number, which is what made this endpoint lie before.
-        return jsonify({
-            "error": "build carries no version stamp",
-            "artifact": filename,
-        }), 503
-
     return jsonify({
         "version": version,
         "url": absolute_url(endpoint),
@@ -233,14 +94,7 @@ def version_json():
 
 @app.route('/version-mac.json')
 def version_mac_json():
-    # No arch in the path means the default build, same as /download-mac.
-    return _manifest(MAC_ARTIFACTS[MAC_DEFAULT_ARCH], mac_endpoint(MAC_DEFAULT_ARCH))
-
-@app.route('/version-mac/<arch>.json')
-def version_mac_arch_json(arch):
-    if arch not in MAC_ARTIFACTS:
-        return jsonify({"error": "unknown architecture"}), 404
-    return _manifest(MAC_ARTIFACTS[arch], mac_endpoint(arch))
+    return _manifest(MAC_ARTIFACT, "download-mac")
 
 @app.route('/site.webmanifest')
 def webmanifest():
@@ -252,11 +106,8 @@ def webmanifest():
         "display": "standalone",
         "background_color": "#1c1029",
         "theme_color": "#1c1029",
-        # icon-192, not favicon-192: this pointed at a file that was never
-        # there, so "install to home screen" fetched a 404 and fell back to a
-        # generic glyph. The 192 file exists under the icon- name.
         "icons": [
-            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/favicon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
         ],
     })

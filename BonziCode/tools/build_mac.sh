@@ -52,8 +52,8 @@ say "installing dependencies"
   die "AppKit will not import after install, the keylog would be dead"
 
 say "reading APP_VERSION"
-VERSION=$(grep -oE 'APP_VERSION="[^"]+"' bonzi_buddy_v2.py | head -1 | cut -d'"' -f2)
-[ -n "$VERSION" ] || die "could not read APP_VERSION from bonzi_buddy_v2.py"
+VERSION=$(grep -oE 'APP_VERSION="[^"]+"' bonzi_buddy_1.20.py | head -1 | cut -d'"' -f2)
+[ -n "$VERSION" ] || die "could not read APP_VERSION from bonzi_buddy_1.20.py"
 echo "version  ${VERSION}"
 
 say "dock icon"
