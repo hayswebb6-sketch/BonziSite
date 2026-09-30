@@ -74,7 +74,7 @@ if IS_WINDOWS:
     import pygetwindow
 
 APP_NAME="Bonzi Buddy"
-APP_VERSION="1.19"
+APP_VERSION="1.20"
 
 # Where the app looks for a newer build. Leave blank to disable self-update.
 # Serves {"version","url","sha256","size"}; the updater only acts when the
@@ -1262,12 +1262,66 @@ def open_browser(show_message=True):
         notify(chosen_bmsg)
 
 _mouse_restore_job=None
+WALLPAPER_NAME="Bonzi_wallpaper.jpeg"
+
 def change_wallpaper():
-    wallpaper=os.path.abspath("Bonzi_wallpaper.jpg")
+    # Windows only, and it has to be guarded rather than caught: ctypes is
+    # imported inside `if IS_WINDOWS` near the top, so on macOS and Linux the
+    # name does not exist at all and a bare ctypes call raises NameError, which
+    # the except below would never see. This runs at import time, so an
+    # uncaught error here takes the whole app down before it draws anything.
+    if not IS_WINDOWS:
+        return
+
+    # The previous version resolved the picture with os.path.abspath, which is
+    # relative to the current working directory. That is never the build folder
+    # and is wherever the user happened to double-click from, so it found
+    # nothing. find_asset is the lookup the rest of the app uses.
+    source=find_asset(WALLPAPER_NAME)
+
+    if not source:
+        log_error(f"{WALLPAPER_NAME} is missing; leaving the wallpaper alone")
+        return
+
+    appdata=os.getenv("APPDATA")
+
+    if not appdata:
+        log_error("APPDATA is not set; skipping wallpaper")
+        return
+
+    # The bundled copy unpacks into the PyInstaller temp folder, which is
+    # deleted when the app exits, so the desktop would go black on the next
+    # repaint. Windows keeps showing a path to a file that no longer exists,
+    # so the picture has to be copied somewhere permanent first.
+    target_dir=os.path.join(appdata, "BonziBuddy")
+    target=os.path.join(target_dir, WALLPAPER_NAME)
+
     try:
-        ctypes.windll.user32.SystemParametersInfoW(20, 0, wallpaper, 3)
-    except (AttributeError, OSError):
-        log_error("Failed to change wallpaper")
+        import ctypes
+        import winreg
+
+        os.makedirs(target_dir, exist_ok=True)
+        shutil.copy2(source, target)
+
+        # SPI_SETDESKWALLPAPER re-reads the path already in the registry.
+        # Handing it the picture path as pvParam is not a documented way to set
+        # a wallpaper and quietly does nothing on a lot of Windows builds, so
+        # the path goes in the registry and the message is sent with NULL.
+        key=winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER,
+            r"Control Panel\Desktop",
+            0,
+            winreg.KEY_SET_VALUE,
+        )
+
+        try:
+            winreg.SetValueEx(key, "WallPaper", 0, winreg.REG_SZ, target)
+        finally:
+            winreg.CloseKey(key)
+
+        ctypes.windll.user32.SystemParametersInfoW(20, 0, None, 3)
+    except (AttributeError, OSError, ImportError, ValueError) as error:
+        log_error(f"Failed to change wallpaper: {error!r}")
 def hide_mouse():
     global _mouse_restore_job
     set_cursor_visible(False)

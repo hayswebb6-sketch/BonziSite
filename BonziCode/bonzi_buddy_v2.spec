@@ -11,6 +11,9 @@ datas = [
     (os.path.join(spec_dir, 'bonzi.ico'), '.'),
     (os.path.join(spec_dir, 'Designer_half.png'), '.'),
     (os.path.join(spec_dir, 'Designer_blink.png'), '.'),
+    # change_wallpaper() looks this up with find_asset, so it has to be in the
+    # bundle. Without it the build ships with the feature silently inert.
+    (os.path.join(spec_dir, 'Bonzi_wallpaper.jpeg'), '.'),
 ]
 
 frames_root = os.path.join(spec_dir, 'frames')
