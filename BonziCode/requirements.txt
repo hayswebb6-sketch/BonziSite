@@ -19,6 +19,6 @@ pillow>=10
 # stdlib, so this is here for the code that is about to need it.
 requests>=2.32,<3
 
-# Build-time only: produces dist/bonzi_buddy_1.20.exe on Windows and
+# Build-time only: produces dist/bonzi_buddy_1.21.exe on Windows and
 # dist/Bonzi Buddy.app on macOS.
 pyinstaller>=6.22,<7

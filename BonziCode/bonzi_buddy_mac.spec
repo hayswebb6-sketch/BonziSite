@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for the macOS .app bundle.
 
-The Windows build uses bonzi_buddy_1.20.spec; this one exists because a .app is
+The Windows build uses bonzi_buddy_1.21.spec; this one exists because a .app is
 a directory bundle rather than a single file, and because the two builds do not
 bundle the same things. The old macOS build was driven by a long --add-data
 command line that left the frames/ folder behind, so macOS users got the
@@ -41,11 +41,11 @@ def pick_icon():
 
 
 def read_app_version():
-    entry = os.path.join(spec_dir, 'bonzi_buddy_1.20.py')
+    entry = os.path.join(spec_dir, 'bonzi_buddy_1.21.py')
     with open(entry, encoding="utf-8") as handle:
         match = re.search(r'^APP_VERSION="([^"]+)"', handle.read(), re.M)
     if not match:
-        raise SystemExit("could not read APP_VERSION out of bonzi_buddy_1.20.py")
+        raise SystemExit("could not read APP_VERSION out of bonzi_buddy_1.21.py")
     return match.group(1)
 
 
@@ -71,7 +71,7 @@ else:
           'the procedural idle animation only')
 
 a = Analysis(
-    ['bonzi_buddy_1.20.py'],
+    ['bonzi_buddy_1.21.py'],
     pathex=[],
     binaries=[],
     datas=datas,

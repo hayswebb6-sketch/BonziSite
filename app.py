@@ -12,7 +12,7 @@ DOWNLOAD_DIR=os.path.join(app.root_path, "downloads")
 # without renaming it there turns every download into a 404, which is exactly
 # what happened: the constants below used to say bonzi_buddy_v2.zip and
 # bonzi_buddy_mac.zip, neither of which the workflow has ever produced.
-WINDOWS_ARTIFACT="bonzi_buddy_1.20.zip"
+WINDOWS_ARTIFACT="bonzi_buddy_1.21.zip"
 MAC_ARTIFACTS={
     "x86_64": "bonzi_buddy_mac_x86_64.zip",
     "arm64": "bonzi_buddy_mac_arm64.zip",
