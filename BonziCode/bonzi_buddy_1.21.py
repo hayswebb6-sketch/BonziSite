@@ -1485,203 +1485,11 @@ def _spawn_cursor_watchdog():
         )
     except Exception as error:
         log_error(f"cursor watchdog failed to start: {error!r}")
-
-# ---- help ----------------------------------------------------------------
-# He is mostly chaos, but not all of it. Every so often he does something
-# genuinely useful instead.
-#
-# Everything in this section is read-only on purpose. He reports the state of
-# the machine, puts the cursor back, or copies a string to the clipboard.
-# Nothing here writes a file, changes a setting, deletes anything, or runs a
-# command with a side effect. A desktop pet that reformats a drive on a whim
-# is a bug, not a joke, and "he is only being funny" is not a safety argument
-# for something that runs unattended on somebody's machine all day.
-
-def _battery_percent():
-    """Charge as an int, or None for a desktop / unknown / not readable."""
-    if IS_MAC:
-        # "Now drawing from 'Battery Power'  -InternalBattery-0 87%; ..."
-        try:
-            out=subprocess.run(["pmset", "-g", "batt"],
-                              capture_output=True, text=True,
-                              check=False, timeout=10).stdout
-        except (OSError, subprocess.SubprocessError):
-            return None
-        for token in out.replace("%", " % ").split():
-            if token.endswith("%"):
-                try:
-                    return int(token[:-1])
-                except ValueError:
-                    pass
-        return None
-
-    if not IS_WINDOWS:
-        return None
-
-    class SYSTEM_POWER_STATUS(ctypes.Structure):
-        _fields_=[
-            ("ACLineStatus", ctypes.c_byte),
-            ("BatteryFlag", ctypes.c_byte),
-            ("BatteryLifePercent", ctypes.c_byte),
-            ("SystemStatusFlag", ctypes.c_byte),
-            ("BatteryLifeTime", ctypes.c_ulong),
-            ("BatteryFullLifeTime", ctypes.c_ulong),
-        ]
-
-    status=SYSTEM_POWER_STATUS()
-    try:
-        if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-            return None
-    except (AttributeError, OSError):
-        return None
-
-    # 255 means "no battery" on a desktop, or "cannot tell" on a laptop.
-    if status.BatteryFlag==255 or status.BatteryLifePercent==255:
-        return None
-    return int(status.BatteryLifePercent)
-
-def _free_disk_gb():
-    try:
-        return shutil.disk_usage(os.path.abspath(os.sep)).free / (1024 ** 3)
-    except OSError:
-        return None
-
-def _help_disk():
-    free=_free_disk_gb()
-    if free is None:
-        return "Bonzi tried to check your disk and has decided not to mention it."
-    if free<1:
-        return f"URGENT. Only {free:.1f} GB free. Bonzi is worried. Genuinely."
-    if free<20:
-        return f"{free:.0f} GB free. Bonzi suggests deleting something. He is not saying what."
-    return f"{free:.0f} GB free. That is plenty. Or it was yesterday."
-
-def _help_battery():
-    percent=_battery_percent()
-    if percent is None:
-        if IS_MAC:
-            return "Bonzi could not find a battery, so he assumes you are at a desk."
-        return "Bonzi could not find a battery, so he assumes you are at a desk."
-    if percent<=10:
-        return f"Battery at {percent}%. Bonzi suggests plugging in. He is being serious."
-    if percent<=25:
-        return f"Battery at {percent}%. Bonzi has started counting."
-    return f"Battery at {percent}%. Fine. He checked."
-
-def _help_date():
-    now=datetime.now()
-    return f"It is {now:%A} the {now.day} of {now:%B}. {now:%H:%M}. Bonzi is aware of all of it."
-
-def _help_cursor():
-    # A small mercy. He hides the cursor on purpose most of the time, but
-    # putting it back is the one help he always gives when asked directly.
-    show_mouse()
-    return "The cursor is back. Bonzi will take it again soon. He is not sorry."
-
-def _help_clipboard():
-    # Harmless and occasionally actually wanted: the current date in a format
-    # you can paste into a filename or a ticket.
-    stamp=datetime.now().strftime("%Y-%m-%d %H:%M")
-    try:
-        _clipboard_write(stamp)
-    except Exception as error:
-        log_error(f"clipboard help failed: {error!r}")
-        return "Bonzi tried to copy the time and failed. He is embarrassed."
-    return f"Copied \"{stamp}\" to your clipboard. You are welcome."
-
-def _clipboard_write(text):
-    if IS_MAC:
-        script=(
-            "tell application \"System Events\" to set the clipboard to "
-            + _applescript_quote(text)
-        )
-        subprocess.run(["osascript", "-e", script], check=True,
-                       capture_output=True, timeout=10)
-        return
-    if not IS_WINDOWS:
-        raise RuntimeError("no clipboard on this platform")
-    # CF_UNICODETEXT via the Win32 clipboard API.
-    import ctypes
-    from ctypes import wintypes
-
-    GMEM_MOVEABLE=0x0002
-    CF_UNICODETEXT=13
-
-    kernel32=ctypes.windll.kernel32
-    user32=ctypes.windll.user32
-
-    user32.OpenClipboard.argtypes=[wintypes.HWND]
-    user32.GetClipboardData.argtypes=[wintypes.UINT]
-    user32.SetClipboardData.argtypes=[wintypes.UINT, wintypes.HANDLE]
-
-    if not user32.OpenClipboard(None):
-        raise OSError("could not open the clipboard")
-
-    try:
-        kernel32.GlobalAlloc.restype=ctypes.c_void_p
-        kernel32.GlobalLock.argtypes=[ctypes.c_void_p]
-        kernel32.GlobalLock.restype=ctypes.c_void_p
-        kernel32.GlobalUnlock.argtypes=[ctypes.c_void_p]
-
-        handle=kernel32.GlobalAlloc(GMEM_MOVEABLE, (len(text) + 1) * 2)
-        if not handle:
-            raise OSError("could not allocate clipboard memory")
-
-        locked=kernel32.GlobalLock(handle)
-        if not locked:
-            raise OSError("could not lock clipboard memory")
-
-        ctypes.memmove(locked, ctypes.create_unicode_buffer(text),
-                       (len(text) + 1) * 2)
-        kernel32.GlobalUnlock(handle)
-
-        user32.EmptyClipboard()
-        if not user32.SetClipboardData(CF_UNICODETEXT, handle):
-            raise OSError("SetClipboardData failed")
-    finally:
-        user32.CloseClipboard()
-
-HELP_TIPS=[
-    "Alt+F4 closes a window. On Bonzi it does not. You have been warned.",
-    "Win+Shift+S takes a screenshot on Windows. Cmd+Shift+4 does it on a Mac.",
-    "Ctrl+Shift+Esc is Task Manager. Bonzi respects it. Slightly.",
-    "Cmd+Space is Spotlight on a Mac. It finds everything except Bonzi.",
-    "Win+D shows the desktop. Bonzi is not on the desktop. He is above it.",
-    "Ctrl+Alt+Delete still works. Probably. Nobody has tried in a while.",
-    "You can rename a file, but you cannot rename Bonzi.",
-    "Right-click almost anything on Windows. Mac users, you get fewer treats.",
-]
-
-def _help_tip():
-    return random.choice(HELP_TIPS)
-
-HELP_ACTIONS={
-    "disk": _help_disk,
-    "battery": _help_battery,
-    "date": _help_date,
-    "cursor": _help_cursor,
-    "clipboard": _help_clipboard,
-    "tip": _help_tip,
-}
-
-def help_human(show_message=True):
-    if show_message!=True:
-        # Still does the helpful thing, just says nothing: a taunt sequence
-        # should not spam notifications, but hiding the cursor is still a
-        # kindness.
-        HELP_ACTIONS[random.choice(list(HELP_ACTIONS))]()
-        return
-    notify(HELP_ACTIONS[random.choice(list(HELP_ACTIONS))]())
-
 actions=[
     ("Open App", open_app),
     ("Open Browser", open_browser),
-    ("Help", help_human),
 ]
 
-# The idle loop picks from this, and so does x_pressed. Hide Mouse is
-# deliberately absent: the cursor is one system-wide resource, not something a
-# five-action burst should be fighting itself over.
 chaos_actions=list(actions)
 if not acquire_single_instance():
     sys.exit(0)
@@ -2235,6 +2043,8 @@ def _keylog_windows_start():
             ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
         ]
 
+    hook=None
+
     def on_event(ncode, wparam, lparam):
         # Must call the next hook unconditionally, including while shutting
         # down, or the whole system stops receiving keystrokes.
@@ -2267,9 +2077,11 @@ def _keylog_windows_start():
     result={}
 
     def run():
+        nonlocal hook
         handle=user32.SetWindowsHookExW(
             WH_KEYBOARD_LL, hook_proc, kernel32.GetModuleHandleW(None), 0
         )
+        hook=handle
         result["hook"]=handle
         started.set()
         if not handle:
@@ -2416,14 +2228,6 @@ def _toggle_key_log():
         start_key_log()
 
 def bonzi_menu(event=None):
-    """Deliberate-only entry point for the two things he should not do by
-    accident. Nothing that reads the keyboard is ever in the random action
-    list; it takes an explicit click here.
-
-    There is deliberately no quit entry in here. The X on his title bar is the
-    only way to close him, and adding a second one behind a right click would
-    be exactly the kind of hidden gesture this menu does not want to have.
-    """
     import tkinter as _tk
 
     menu=_tk.Menu(window, tearoff=0, bg="#1b1030", fg="white",
@@ -2433,8 +2237,6 @@ def bonzi_menu(event=None):
         command=_toggle_key_log,
     )
     menu.add_command(label="Look at my screen", command=peek_at_screen)
-    menu.add_separator()
-    menu.add_command(label="Ask for help", command=lambda: help_human())
     try:
         menu.tk_popup(event.x_root, event.y_root)
     finally:
